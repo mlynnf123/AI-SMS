@@ -1,0 +1,34 @@
+{
+  "name": "integrated-api-automation",
+  "version": "1.0.0",
+  "description": "Integrated API automation server that combines Make.com blueprint with Node.js",
+  "main": "integrated-api-server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node integrated-api-server.js",
+    "dev": "nodemon integrated-api-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "api",
+    "automation",
+    "make.com",
+    "openai",
+    "twilio",
+    "google-sheets"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/formbody": "^7.4.0",
+    "dotenv": "^16.3.1",
+    "fastify": "^4.24.3",
+    "google-auth-library": "^9.4.1",
+    "google-spreadsheet": "^4.1.1",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.20.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
