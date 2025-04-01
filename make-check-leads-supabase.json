@@ -1,0 +1,319 @@
+{
+    "name": "process-new-leads-supabase",
+    "flow": [
+        {
+            "id": 1,
+            "module": "supabase:watchRecords",
+            "version": 1,
+            "parameters": {
+                "__IMTCONN__": "YOUR_SUPABASE_CONNECTION_ID"
+            },
+            "mapper": {
+                "table": "leads",
+                "watchType": "new_records",
+                "maxResults": 10
+            },
+            "metadata": {
+                "designer": {
+                    "x": 0,
+                    "y": 0
+                },
+                "parameters": [
+                    {
+                        "name": "__IMTCONN__",
+                        "type": "account:supabase",
+                        "label": "Connection",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": 2,
+            "module": "flow:SetVariable",
+            "version": 1,
+            "parameters": {},
+            "mapper": {
+                "name": "formattedLeads",
+                "value": "[{\"phoneNumber\": \"{{1.phone_number}}\", \"name\": \"{{1.name}}\"}]"
+            },
+            "metadata": {
+                "designer": {
+                    "x": 300,
+                    "y": 0
+                },
+                "expect": [
+                    {
+                        "name": "name",
+                        "type": "text",
+                        "label": "Name",
+                        "required": true
+                    },
+                    {
+                        "name": "value",
+                        "type": "any",
+                        "label": "Value",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": 3,
+            "module": "http:makeRequest",
+            "version": 2,
+            "parameters": {},
+            "mapper": {
+                "url": "https://YOUR_CLOUD_RUN_URL.run.app/check-leads",
+                "method": "POST",
+                "headers": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ],
+                "body": "{\"leads\": {{2.value}}}",
+                "bodyType": "raw",
+                "parseResponse": true
+            },
+            "metadata": {
+                "designer": {
+                    "x": 600,
+                    "y": 0
+                },
+                "expect": [
+                    {
+                        "name": "url",
+                        "type": "url",
+                        "label": "URL",
+                        "required": true
+                    },
+                    {
+                        "name": "method",
+                        "type": "select",
+                        "label": "Method",
+                        "required": true,
+                        "validate": {
+                            "enum": [
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "DELETE",
+                                "PATCH",
+                                "HEAD",
+                                "OPTIONS"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "headers",
+                        "spec": [
+                            {
+                                "name": "key",
+                                "type": "text",
+                                "label": "Key",
+                                "required": true
+                            },
+                            {
+                                "name": "value",
+                                "type": "text",
+                                "label": "Value",
+                                "required": true
+                            }
+                        ],
+                        "type": "array",
+                        "label": "Headers"
+                    },
+                    {
+                        "name": "bodyType",
+                        "type": "select",
+                        "label": "Body Type",
+                        "validate": {
+                            "enum": [
+                                "raw",
+                                "form-data",
+                                "x-www-form-urlencoded"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "body",
+                        "type": "any",
+                        "label": "Body"
+                    },
+                    {
+                        "name": "parseResponse",
+                        "type": "boolean",
+                        "label": "Parse response"
+                    }
+                ]
+            }
+        },
+        {
+            "id": 4,
+            "module": "flow:Router",
+            "version": 1,
+            "parameters": {},
+            "mapper": {},
+            "metadata": {
+                "designer": {
+                    "x": 900,
+                    "y": 0
+                }
+            },
+            "routes": [
+                {
+                    "name": "Success",
+                    "conditions": [
+                        [
+                            {
+                                "a": "{{3.statusCode}}",
+                                "b": "200",
+                                "o": "text:equal"
+                            }
+                        ]
+                    ],
+                    "flow": [
+                        {
+                            "id": 5,
+                            "module": "supabase:insertRecord",
+                            "version": 1,
+                            "parameters": {
+                                "__IMTCONN__": "YOUR_SUPABASE_CONNECTION_ID"
+                            },
+                            "mapper": {
+                                "table": "processed_leads",
+                                "record": {
+                                    "lead_id": "{{1.id}}",
+                                    "name": "{{1.name}}",
+                                    "phone_number": "{{1.phone_number}}",
+                                    "processed_at": "{{now}}",
+                                    "status": "success",
+                                    "response": "{{3.body}}"
+                                }
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1200,
+                                    "y": -150
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:supabase",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Error",
+                    "conditions": [
+                        [
+                            {
+                                "a": "{{3.statusCode}}",
+                                "b": "200",
+                                "o": "text:notequal"
+                            }
+                        ]
+                    ],
+                    "flow": [
+                        {
+                            "id": 6,
+                            "module": "supabase:insertRecord",
+                            "version": 1,
+                            "parameters": {
+                                "__IMTCONN__": "YOUR_SUPABASE_CONNECTION_ID"
+                            },
+                            "mapper": {
+                                "table": "error_logs",
+                                "record": {
+                                    "lead_id": "{{1.id}}",
+                                    "name": "{{1.name}}",
+                                    "phone_number": "{{1.phone_number}}",
+                                    "error_time": "{{now}}",
+                                    "request_body": "{{2.value}}",
+                                    "error_response": "{{3.body}}",
+                                    "status_code": "{{3.statusCode}}"
+                                }
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1200,
+                                    "y": 150
+                                },
+                                "parameters": [
+                                    {
+                                        "name": "__IMTCONN__",
+                                        "type": "account:supabase",
+                                        "label": "Connection",
+                                        "required": true
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "id": 7,
+                            "module": "tools:SendEmail",
+                            "version": 1,
+                            "parameters": {},
+                            "mapper": {
+                                "to": "YOUR_EMAIL@example.com",
+                                "subject": "Error Processing Lead",
+                                "content": "Error processing lead for {{1.name}}.\n\nRequest Body:\n{{2.value}}\n\nError Response:\n{{3.body}}"
+                            },
+                            "metadata": {
+                                "designer": {
+                                    "x": 1500,
+                                    "y": 150
+                                },
+                                "expect": [
+                                    {
+                                        "name": "to",
+                                        "type": "email",
+                                        "label": "To",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "subject",
+                                        "type": "text",
+                                        "label": "Subject",
+                                        "required": true
+                                    },
+                                    {
+                                        "name": "content",
+                                        "type": "text",
+                                        "label": "Content",
+                                        "required": true
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "metadata": {
+        "instant": false,
+        "version": 1,
+        "scenario": {
+            "roundtrips": 1,
+            "maxErrors": 3,
+            "autoCommit": true,
+            "autoCommitTriggerLast": true,
+            "sequential": false,
+            "confidential": false,
+            "dataloss": false,
+            "dlq": false,
+            "freshVariables": false
+        },
+        "designer": {
+            "orphans": []
+        },
+        "zone": "us1.make.com"
+    }
+}
