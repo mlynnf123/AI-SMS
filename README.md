@@ -1,106 +1,143 @@
-# Integrated API Automation Server
+# Bart's Automotive SMS and Voice Assistant
 
-This project combines the functionality of a Make.com blueprint with a Node.js server, allowing you to run everything from a single codebase without needing to set up the Make.com blueprint separately.
+This project provides a complete solution to manage customer interactions through SMS, voice calls, and a web dashboard. It uses OpenAI's GPT-4o and Realtime API for natural language processing, Twilio for SMS and voice call handling, and Supabase for data storage.
 
 ## Features
 
-- **SMS Handling**: Receives and processes SMS messages using Twilio
-- **OpenAI Integration**: Uses GPT models for generating responses and processing conversations
-- **Google Sheets Integration**: Stores call history and tow booking information
-- **Webhook Endpoint**: Replaces the Make.com webhook functionality
+- **SMS Interaction**: Automated SMS conversations with customers using OpenAI's GPT-4o
+- **Voice Call Handling**: Interactive voice assistant using OpenAI's Realtime API
+- **Lead Management**: Automated outreach to new leads
+- **Web Dashboard**: Real-time dashboard to view and manage all conversations
+- **Data Storage**: All conversations and customer information stored in Supabase
 
-## Routes
+## Prerequisites
 
-The server implements the following routes that match the Make.com blueprint functionality:
-
-1. **GET /** - Root route that confirms the server is running
-2. **POST /api/get-first-message** - Gets the first message based on call history
-3. **POST /api/add-call-summary** - Adds a new call summary to Google Sheets
-4. **POST /api/question-answer** - Handles question and answer functionality using OpenAI Assistant
-5. **POST /api/book-tow** - Books a tow service
-6. **POST /sms** - Handles incoming SMS messages
-7. **POST /webhook** - Main webhook endpoint that replaces the Make.com webhook
-
-## Setup Instructions
-
-### Prerequisites
-
-- Node.js (v14 or higher)
-- npm or yarn
-- Google Cloud account with Google Sheets API enabled
+- Node.js (v18 or higher)
 - OpenAI API key
-- Twilio account (for SMS functionality)
+- Twilio account with phone number
+- Supabase account and project
 
-### Installation
+## Installation
 
-1. Clone this repository
+1. Clone the repository:
+   ```
+   git clone <repository-url>
+   cd openai-realtime-api-voice-assistant
+   ```
+
 2. Install dependencies:
    ```
    npm install
    ```
+
 3. Create a `.env` file based on the `.env.example` template:
    ```
    cp .env.example .env
    ```
-4. Fill in your environment variables in the `.env` file:
-   - OpenAI API key
-   - Twilio credentials
-   - Google service account details
-   - OpenAI Assistant ID (optional, defaults to the one in the Make.com blueprint)
 
-### Google Sheets Setup
+4. Fill in your API keys and credentials in the `.env` file:
+   ```
+   # OpenAI API Key
+   OPENAI_API_KEY=your_openai_api_key_here
 
-1. Create a Google Cloud project
-2. Enable the Google Sheets API
-3. Create a service account and download the JSON key
-4. Share your Google Sheet with the service account email
-5. Make sure your Google Sheet has the following sheets:
-   - `call_history` with columns: phone_number, name, transcript, summary
-   - `book_tow` with columns: phone_number, location, status
+   # Twilio Credentials
+   TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
+   TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
+   TWILIO_PHONE_NUMBER=your_twilio_phone_number_here
 
-### Running the Server
+   # Supabase Credentials
+   SUPABASE_URL=your_supabase_url_here
+   SUPABASE_API_KEY=your_supabase_api_key_here
 
-Development mode:
-```
-npm run dev
-```
-
-Production mode:
-```
-npm start
-```
+   # Server Port (optional, defaults to 5050)
+   PORT=5050
+   ```
 
 ## Usage
 
-### Webhook Endpoint
+### Starting the Server
 
-The main webhook endpoint is `/webhook` which accepts POST requests with the following parameters:
+To start the server with Supabase integration:
 
-- `route`: The route number (1-4) corresponding to the Make.com blueprint routes
-- `data1`: Usually the phone number
-- `data2`: Additional data (varies by route)
+```
+npm run start:supabase
+```
 
-Example request:
+For development with auto-restart on file changes:
+
+```
+npm run dev:supabase
+```
+
+### Accessing the Dashboard
+
+Once the server is running, you can access the web dashboard at:
+
+```
+http://localhost:5050
+```
+
+### Setting Up Twilio
+
+1. In your Twilio account, set up your phone number with the following webhook URLs:
+
+   - For SMS:
+     - When a message comes in: `http://your-server-url/sms` (HTTP POST)
+
+   - For Voice:
+     - A call comes in: `http://your-server-url/incoming-call` (HTTP POST)
+
+2. Make sure your server is accessible from the internet (you may need to use a service like ngrok for local development).
+
+### Sending Messages to Leads
+
+To send messages to new leads, make a POST request to:
+
+```
+POST /check-leads
+```
+
+With the following JSON body:
+
 ```json
 {
-  "route": "1",
-  "data1": "+1234567890",
-  "data2": "additional data"
+  "leads": [
+    {
+      "phoneNumber": "+1234567890",
+      "name": "John Doe"
+    },
+    {
+      "phoneNumber": "+0987654321",
+      "name": "Jane Smith"
+    }
+  ]
 }
 ```
 
-### SMS Endpoint
+## API Endpoints
 
-The SMS endpoint is `/sms` which accepts POST requests with Twilio's standard format:
+- `GET /`: Redirects to the dashboard
+- `GET /api/conversations`: Get all conversations
+- `GET /api/conversations/:id`: Get a specific conversation with messages
+- `POST /api/conversations/:id/messages`: Send a message to a conversation
+- `POST /check-leads`: Send messages to new leads
+- `POST /sms`: Webhook for incoming SMS messages
+- `POST /incoming-call`: Webhook for incoming voice calls
 
-- `Body`: The message body
-- `From`: The sender's phone number
+## WebSocket
 
-## Migrating from Make.com
+The server provides a WebSocket endpoint at `/ws` for real-time updates. The dashboard automatically connects to this endpoint to receive updates about new messages and conversations.
 
-This server completely replaces the Make.com blueprint functionality. If you were previously using the Make.com blueprint, you can simply:
+## Project Structure
 
-1. Update any external services that were calling your Make.com webhook to call your server's `/webhook` endpoint instead
-2. Ensure your Google Sheets structure matches what the server expects
+- `index-supabase-fixed.js`: Main server file with Supabase integration
+- `public/`: Frontend files for the dashboard
+  - `index.html`: Dashboard HTML
+  - `styles.css`: Dashboard styles
+  - `app.js`: Dashboard JavaScript
+- `.env`: Environment variables (not included in repository)
+- `.env.example`: Example environment variables file
 
-No other changes should be needed as the server implements all the same functionality.
+## License
+
+ISC

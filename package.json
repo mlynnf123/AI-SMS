@@ -1,34 +1,31 @@
 {
-  "name": "integrated-api-automation",
+  "name": "openai-realtime-api",
   "version": "1.0.0",
-  "description": "Integrated API automation server that combines Make.com blueprint with Node.js",
-  "main": "integrated-api-server.js",
-  "type": "module",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node integrated-api-server.js",
-    "dev": "nodemon integrated-api-server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "start:supabase": "node index-supabase-fixed.js",
+    "dev": "node --watch index.js",
+    "dev:supabase": "node --watch index-supabase-fixed.js"
   },
-  "keywords": [
-    "api",
-    "automation",
-    "make.com",
-    "openai",
-    "twilio",
-    "google-sheets"
-  ],
+  "keywords": [],
   "author": "",
   "license": "ISC",
+  "type": "module",
   "dependencies": {
-    "@fastify/formbody": "^7.4.0",
-    "dotenv": "^16.3.1",
-    "fastify": "^4.24.3",
-    "google-auth-library": "^9.4.1",
-    "google-spreadsheet": "^4.1.1",
+    "@fastify/formbody": "^8.0.0",
+    "@fastify/static": "^8.1.1",
+    "@fastify/websocket": "^11.0.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "axios": "^1.4.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.0.0",
+    "form-data": "^4.0.0",
     "node-fetch": "^3.3.2",
-    "openai": "^4.20.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "pg": "^8.14.1",
+    "postgres": "^3.4.5",
+    "ws": "^8.18.0"
   }
 }
