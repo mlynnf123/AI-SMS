@@ -1,6 +1,6 @@
-# Bart's Automotive SMS and Voice Assistant
+SMS Assistant
 
-This project provides a complete solution to manage customer interactions through SMS, voice calls, and a web dashboard. It uses OpenAI's GPT-4o and Realtime API for natural language processing, Twilio for SMS and voice call handling, and Supabase for data storage.
+This project provides a complete solution to manage customer interactions through SMS and a web dashboard. It uses OpenAI's GPT-4o and Realtime API for natural language processing, Twilio for SMS and voice call handling, and Supabase for data storage.
 
 ## Features
 
@@ -22,7 +22,7 @@ This project provides a complete solution to manage customer interactions throug
 1. Clone the repository:
    ```
    git clone <repository-url>
-   cd openai-realtime-api-voice-assistant
+   cd Ai-sms
    ```
 
 2. Install dependencies:
