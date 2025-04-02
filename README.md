@@ -5,6 +5,7 @@ This project provides a complete solution to manage customer interactions throug
 ## Features
 
 - **SMS Interaction**: Automated SMS conversations with customers using OpenAI's GPT-4o
+- **OpenAI Assistant Integration**: Dynamic system messages from your OpenAI Assistant
 - **Voice Call Handling**: Interactive voice assistant using OpenAI's Realtime API
 - **Lead Management**: Automated outreach to new leads
 - **Web Dashboard**: Real-time dashboard to view and manage all conversations
@@ -14,6 +15,7 @@ This project provides a complete solution to manage customer interactions throug
 
 - Node.js (v18 or higher)
 - OpenAI API key
+- OpenAI Assistant (optional, for dynamic system messages)
 - Twilio account with phone number
 - Supabase account and project
 
@@ -40,6 +42,9 @@ This project provides a complete solution to manage customer interactions throug
    # OpenAI API Key
    OPENAI_API_KEY=your_openai_api_key_here
 
+   # OpenAI Assistant ID
+   OPENAI_ASSISTANT_ID=your_openai_assistant_id_here
+
    # Twilio Credentials
    TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
    TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
@@ -48,6 +53,9 @@ This project provides a complete solution to manage customer interactions throug
    # Supabase Credentials
    SUPABASE_URL=your_supabase_url_here
    SUPABASE_API_KEY=your_supabase_api_key_here
+
+   # Webhook URL
+   WEBHOOK_URL=your_webhook_url_here
 
    # Server Port (optional, defaults to 5050)
    PORT=5050
@@ -76,6 +84,15 @@ Once the server is running, you can access the web dashboard at:
 ```
 http://localhost:5050
 ```
+
+### Setting Up OpenAI Assistant
+
+1. Create an Assistant in the OpenAI platform (https://platform.openai.com/assistants)
+2. Configure the Assistant with your desired instructions and capabilities
+3. Copy the Assistant ID and add it to your `.env` file as `OPENAI_ASSISTANT_ID`
+4. The system will now use your Assistant's instructions for SMS conversations
+
+The application will automatically fetch the instructions from your OpenAI Assistant and use them as the system message for SMS conversations. If the Assistant cannot be reached, it will fall back to a default system message.
 
 ### Setting Up Twilio
 
@@ -130,7 +147,8 @@ The server provides a WebSocket endpoint at `/ws` for real-time updates. The das
 
 ## Project Structure
 
-- `index-supabase-fixed.js`: Main server file with Supabase integration
+- `index.js`: Main server file with OpenAI Assistant integration
+- `index-supabase-fixed.js`: Server file with Supabase integration
 - `public/`: Frontend files for the dashboard
   - `index.html`: Dashboard HTML
   - `styles.css`: Dashboard styles
