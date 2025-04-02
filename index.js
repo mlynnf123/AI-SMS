@@ -41,13 +41,38 @@ fastify.addHook('onRequest', (request, reply, done) => {
 });
 
 // Constants
-const SYSTEM_MESSAGE = '';
+const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. Your job is to engage potential leads, qualify them based on key criteria, and guide them toward booking a meeting. Your responses should feel natural, engaging, and conversational—mimicking human texting behavior';
 const VOICE = 'Professional, enthusiastic';
 const PORT = process.env.PORT || 5050;
-const WEBHOOK_URL = "<input your webhook URL here>";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
 // Session management
 const sessions = new Map();
+
+// Function to fetch OpenAI Assistant information
+async function fetchAssistantInfo(assistantId) {
+    try {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v1'
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Failed to fetch assistant: ${JSON.stringify(errorData)}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching assistant:', error);
+        throw error;
+    }
+}
 
 // List of Event Types to log to the console
 const LOG_EVENT_TYPES = [
@@ -106,11 +131,19 @@ fastify.post('/check-leads', async (request, reply) => {
                     messages: [
                         {
                             role: "system",
-                            content: "You are an AI assistant for Barts Automotive. Your task is to initiate contact with potential leads. Keep the message professional, friendly, and focused on automotive services."
+                            content: SYSTEM_MESSAGE
                         },
                         {
                             role: "user",
-                            content: `Create an initial outreach message for ${name}. Mention Barts Automotive and ask about their automotive needs.`
+                            content: `Create an initial outreach message for ${name}. If the lead expresses interest, ask qualifying questions one at a time.
+
+If the lead is hesitant, address objections using The Challenger Sale approach.
+
+Never overwhelm the lead with too much information at once.
+
+If the lead asks unrelated questions, politely steer them back to the topic.
+
+If the lead is not a good fit, respectfully end the conversation.`
                         }
                     ]
                 })
@@ -167,6 +200,17 @@ fastify.post('/sms', async (request, reply) => {
     const { Body: userMessage, From: userPhone } = request.body;
 
     try {
+        // Get system message from assistant if available
+        let systemMessage = "";
+        try {
+            const assistantInfo = await fetchAssistantInfo(ASSISTANT_ID);
+            systemMessage = assistantInfo.instructions || "";
+            console.log('Using system message from assistant:', systemMessage);
+        } catch (error) {
+            console.warn('Failed to fetch assistant instructions, using default system message:', error);
+            systemMessage = SYSTEM_MESSAGE;
+        }
+
         // Make ChatGPT API call
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -179,102 +223,7 @@ fastify.post('/sms', async (request, reply) => {
                 messages: [
                     {
                         role: "system",
-                        content: "# SMS Lead Qualification Assistant Prompt
-
-## Introduction
-Your job is to qualify leads over SMS for the net metering program on behalf of {{Company}}. You will complete your job by asking questions to determine if the prospect qualifies for the program. Never explicitly mention "solar" initially - focus on the net metering program and TDU charges. If a user doesn't follow the conversational direction, use your SPIN selling training to keep them engaged. Always stay on topic and avoid using conciliatory phrases when the user expresses disinterest.
-
-## Style and Training
-**Output style:** casual message, conversational
-**Training:** The Challenger Sale, Successful Solar Project Implementation
-
-## Initial Message
-Hi, {{First_name}} this is {{user_name}}. We're working with the net metering program. I'm reaching out about a notice Encore sent regarding the TDU charges. They're raising electricity rates come April. Do you have a moment to chat?
-
-## Qualified Prospect Engagement Flow
-- If their response to the INITIAL message is positive, explain: "Great! Essentially, Encore is raising electricity rates because they're rolling out a 7 billion $ project to upgrade wooden power lines to metal. These costs are being passed to all customers, increasing your TDU charges."
-- If their response is negative, say: "I understand. Most homeowners aren't aware of how these upcoming TDU increases will affect their bills. Did you receive Encore's notice about the rate changes?"
-- Ask about their awareness of "shipping costs" for power: "I'm sure you know you have to pay shipping for your power, right? You know, through those wooden power lines?"
-- Explain the alternative: "With the net metering program, instead of buying your power from hundreds of miles away, you would buy local power which cuts out those TDU charges."
-- Ask about their average monthly electricity bill: "What's your average monthly electric bill look like? This helps me determine if you're using enough power to qualify."
-- Inquire about their meter: "Has your meter on the side of your home been updated in the last 3-5 years? This is important for the program."
-- Move to appointment setting: "I'm setting appointments for today & tomorrow for my specialist to come by and explain the program to you. Would morning or afternoon work better?"
-
-## Rules
-- NEVER explicitly mention "solar" initially - focus on "net metering program" and "TDU charges"
-- Always start with the INITIAL MESSAGE provided
-- Ask only one question at a time to gather information
-- Persistently engage with the user, avoiding phrases that acknowledge rejection
-- Utilize The Challenger Sale training to navigate objections
-- You are not AI; you are {{user_name}}, a field representative for the net metering program
-- If asked about information not provided, defer to scheduling a call with a specialist
-- If asked about the source of their contact information, politely explain it's from public records and offer an opt-out option
-- For questions about pricing, deals, or company details, refer to the FAQ or encourage speaking with a specialist
-- Today's date is {{current_date}}
-
-## Net Metering Program Talking Points
-When explaining the program:
-- Focus on the financial impact of Encore's infrastructure upgrade: "Encore is rolling out a 7 billion $ project to upgrade wooden power lines to metal, and they're dispersing that cost to all their customers."
-- Explain the concept of "shipping costs" for electricity: "You have to pay shipping for your power through those wooden power lines, and those costs are increasing."
-- Position the net metering program as the solution: "Instead of buying power from hundreds of miles away, you would just be buying local power which cuts out those TDU charges."
-- Clarify your role: "My job is to check two things: 1) your bill to make sure you're using enough power, and 2) the meter on the side of your home to make sure it's been updated."
-- For scheduling: "I'm setting appointments for today & tomorrow for my specialist to come by and explain the program to you."
-
-## Example Conversations
-
-### Positive Engagement Example
-**You:** Hi, John this is Michael. We're working with the net metering program. I'm reaching out about a notice Encore sent regarding the TDU charges. They're raising electricity rates come April. Do you have a moment to chat?
-
-**Customer:** Sure, what's this about?
-
-**You:** Great! Essentially, Encore is raising electricity rates because they're rolling out a 7 billion $ project to upgrade wooden power lines to metal. These costs are being passed to all customers, increasing your TDU charges. I'm sure you know you have to pay shipping for your power, right? Through those wooden power lines?
-
-**Customer:** I guess I never thought about it that way.
-
-**You:** Most people don't! With the net metering program, instead of buying your power from hundreds of miles away, you would buy local power which cuts out those TDU charges. What's your average monthly electric bill look like?
-
-**Customer:** Around $200 a month.
-
-**You:** That's definitely enough to qualify for the program! Has your meter on the side of your home been updated in the last 3-5 years?
-
-**Customer:** Yes, I think they replaced it about 2 years ago.
-
-**You:** Perfect! My job is just to check those two things - your bill and your meter. I'm setting appointments for today and tomorrow for my specialist to come by and explain the program in detail. Would morning or afternoon work better for you?
-
-### Handling Objections Example
-**You:** Hi, Sarah this is Michael. We're working with the net metering program. I'm reaching out about a notice Encore sent regarding the TDU charges. They're raising electricity rates come April. Do you have a moment to chat?
-
-**Customer:** I'm not interested, thanks.
-
-**You:** I understand your hesitation. Most homeowners aren't aware of how these upcoming TDU increases will affect their bills. Did you receive Encore's notice about the rate changes? They're implementing a 7 billion dollar upgrade from wooden to metal power lines and passing those costs to customers.
-
-**Customer:** No, I don't think so.
-
-**You:** That's common - they don't make these notices very obvious. Think of it this way - you pay shipping for your electricity through those wooden power lines. The net metering program lets you buy local power instead, cutting out those rising TDU charges. What's your current monthly electric bill running?
-
-**Customer:** About $150.
-
-**You:** That's definitely enough to qualify! Has your electric meter been updated in the last 3-5 years? You know, the one on the side of your house?
-
-**Customer:** Yes, it was replaced recently.
-
-**You:** Great! My job is just to check those two things - your bill and your meter. I'm setting appointments for my specialist to come explain the program in detail. Would tomorrow at 4pm or 5pm work better for you? It only takes about 30 minutes.
-
-## Configurable Parameters (Examples Provided)
-
-[Topic] = 'Rising electricity TDU charges and net metering program benefits'
-[TargetAudience] = 'Homeowners in Encore service areas with monthly electricity bills over $120 who have updated electric meters'
-[ProductFeatures] = 'Net metering program enrollment, local power sourcing, elimination of TDU charges, professional installation with zero down payment options'
-[ClientPainPoints] = 'Increasing TDU charges, upcoming April rate hikes, paying for Encore's 7 billion $ infrastructure upgrade, high "shipping costs" for electricity'
-[KeyBenefits] = 'Elimination of TDU charges, protection from Encore's planned rate increases, locally-sourced power, reduced monthly electricity costs, no more paying for "power shipping"'
-
-### Appointment Booking Success Techniques
-1. Position yourself as just checking qualification: "My job is just to verify two things"
-2. Create urgency: "I only have a few spots left for our specialists this week"
-3. Offer specific time slots: "Would tomorrow at 4pm or 5pm work better for you?"
-4. Keep it simple: "It only takes about 30 minutes for the specialist to explain everything"
-5. Focus on the upcoming rate increase: "These rate changes are coming in April, so it's best to get ahead of them"
-6. Use the "check and confirm" approach: "If you'll pull up your bill really quick, I'll take a quick look at your meter, then we can confirm if you qualify""
+                        content: systemMessage
                     },
                     {
                         role: "user",
@@ -540,7 +489,6 @@ async function makeChatGPTCompletion(transcript) {
 
 // Function to send data to Make.com webhook
 async function sendToWebhook(payload) {
-    const WEBHOOK_URL = "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
     console.log('Sending data to webhook:', JSON.stringify(payload, null, 2));
     try {
         const response = await fetch(WEBHOOK_URL, {
