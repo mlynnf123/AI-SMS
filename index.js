@@ -195,77 +195,22 @@ If the lead is not a good fit, respectfully end the conversation.`
     }
 });
 
-// Route to handle incoming SMS
+// Route to handle incoming SMS - MODIFIED TO FORWARD TO MAKE.COM
 fastify.post('/sms', async (request, reply) => {
     const { Body: userMessage, From: userPhone } = request.body;
 
     try {
-        // Get system message from assistant if available
-        let systemMessage = "";
-        try {
-            const assistantInfo = await fetchAssistantInfo(ASSISTANT_ID);
-            systemMessage = assistantInfo.instructions || "";
-            console.log('Using system message from assistant:', systemMessage);
-        } catch (error) {
-            console.warn('Failed to fetch assistant instructions, using default system message:', error);
-            systemMessage = SYSTEM_MESSAGE;
-        }
-
-        // Make ChatGPT API call
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: "gpt-4o",
-                messages: [
-                    {
-                        role: "system",
-                        content: systemMessage
-                    },
-                    {
-                        role: "user",
-                        content: userMessage
-                    }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        const aiResponse = data.choices[0].message.content;
-
-        // Send SMS reply using Twilio
-        const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({
-                'To': userPhone,
-                'From': TWILIO_PHONE_NUMBER,
-                'Body': aiResponse
-            })
-        });
-
-        if (!twilioResponse.ok) {
-            const twilioError = await twilioResponse.json();
-            throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
-        }
-
-        // Send conversation data to webhook
+        // Forward the SMS data to Make.com webhook without processing
         await sendToWebhook({
             userPhone,
             userMessage,
-            aiResponse,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            type: 'incoming_sms'
         });
-
+        
         reply.send({ success: true });
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error forwarding SMS to webhook:', error);
         // Provide more detailed error information
         const errorMessage = error.message || 'Unknown error';
         const errorDetails = error.response?.data || {};
