@@ -53,12 +53,12 @@ const sessions = new Map();
 // Function to fetch OpenAI Assistant information
 async function fetchAssistantInfo(assistantId) {
     try {
-        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+        const response = await fetch(`https://api.openai.com/v2/assistants/${assistantId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v1'
+                'OpenAI-Beta': 'assistants=v2'
             }
         });
 
@@ -120,7 +120,7 @@ fastify.post('/check-leads', async (request, reply) => {
             }
             
             // Make ChatGPT API call for initial outreach
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            const response = await fetch('https://api.openai.com/v2/chat/completions', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${OPENAI_API_KEY}`,
@@ -195,22 +195,78 @@ If the lead is not a good fit, respectfully end the conversation.`
     }
 });
 
-// Route to handle incoming SMS - MODIFIED TO FORWARD TO MAKE.COM
+// Route to handle incoming SMS
 fastify.post('/sms', async (request, reply) => {
     const { Body: userMessage, From: userPhone } = request.body;
 
     try {
-        // Forward the SMS data to Make.com webhook without processing
+        // Get system message from assistant if available
+        let systemMessage = "";
+        try {
+            const assistantInfo = await fetchAssistantInfo(ASSISTANT_ID);
+            systemMessage = assistantInfo.instructions || "";
+            console.log('Using system message from assistant:', systemMessage);
+        } catch (error) {
+            console.warn('Failed to fetch assistant instructions, using default system message:', error);
+            systemMessage = SYSTEM_MESSAGE;
+        }
+
+        // Make ChatGPT API call
+        const response = await fetch('https://api.openai.com/v2/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemMessage
+                    },
+                    {
+                        role: "user",
+                        content: userMessage
+                    }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        const aiResponse = data.choices[0].message.content;
+
+        // Send SMS reply using Twilio
+        const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                'To': userPhone,
+                'From': TWILIO_PHONE_NUMBER,
+                'Body': aiResponse
+            })
+        });
+
+        if (!twilioResponse.ok) {
+            const twilioError = await twilioResponse.json();
+            throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
+        }
+
+        // Send conversation data to webhook for tracking (optional)
         await sendToWebhook({
             userPhone,
             userMessage,
+            aiResponse,
             timestamp: new Date().toISOString(),
-            type: 'incoming_sms'
+            type: 'conversation'
         });
-        
+
         reply.send({ success: true });
     } catch (error) {
-        console.error('Error forwarding SMS to webhook:', error);
+        console.error('Error:', error);
         // Provide more detailed error information
         const errorMessage = error.message || 'Unknown error';
         const errorDetails = error.response?.data || {};
@@ -246,10 +302,10 @@ fastify.register(async (fastify) => {
         let session = sessions.get(sessionId) || { transcript: '', streamSid: null };
         sessions.set(sessionId, session);
 
-        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        const openAiWs = new WebSocket('wss://api.openai.com/v2/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
             headers: {
                 Authorization: `Bearer ${OPENAI_API_KEY}`,
-                "OpenAI-Beta": "realtime=v1"
+                "OpenAI-Beta": "realtime=v2"
             }
         });
 
@@ -385,7 +441,7 @@ fastify.listen({ port: PORT }, (err) => {
 async function makeChatGPTCompletion(transcript) {
     console.log('Starting ChatGPT API call...');
     try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch('https://api.openai.com/v2/chat/completions', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
