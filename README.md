@@ -1,30 +1,28 @@
-SMS Assistant
+# AI SMS Conversation System
 
-This project provides a complete solution to manage customer interactions through SMS and a web dashboard. It uses OpenAI's GPT-4o and Realtime API for natural language processing, Twilio for SMS and voice call handling, and Supabase for data storage.
+A Node.js server that handles SMS conversations using OpenAI and Twilio, with optional Make.com integration.
 
 ## Features
 
-- **SMS Interaction**: Automated SMS conversations with customers using OpenAI's GPT-4o
-- **OpenAI Assistant Integration**: Dynamic system messages from your OpenAI Assistant
-- **Voice Call Handling**: Interactive voice assistant using OpenAI's Realtime API
-- **Lead Management**: Automated outreach to new leads
-- **Web Dashboard**: Real-time dashboard to view and manage all conversations
-- **Data Storage**: All conversations and customer information stored in Supabase
+- Direct SMS conversation handling with OpenAI
+- Make.com webhook integration for advanced workflows
+- Voice call handling with OpenAI's real-time API
+- Google Cloud Run deployment support
 
 ## Prerequisites
 
-- Node.js (v18 or higher)
+- Node.js 18 or higher
 - OpenAI API key
-- OpenAI Assistant (optional, for dynamic system messages)
-- Twilio account with phone number
-- Supabase account and project
+- Twilio account with SMS capabilities
+- (Optional) Make.com account for advanced workflows
+- (Optional) Google Cloud Platform account for deployment
 
 ## Installation
 
 1. Clone the repository:
    ```
-   git clone <repository-url>
-   cd Ai-sms
+   git clone https://github.com/mlynnf123/AI-SMS.git
+   cd AI-SMS
    ```
 
 2. Install dependencies:
@@ -32,130 +30,81 @@ This project provides a complete solution to manage customer interactions throug
    npm install
    ```
 
-3. Create a `.env` file based on the `.env.example` template:
+3. Create a `.env` file based on `.env.example`:
    ```
    cp .env.example .env
    ```
 
-4. Fill in your API keys and credentials in the `.env` file:
-   ```
-   # OpenAI API Key
-   OPENAI_API_KEY=your_openai_api_key_here
-
-   # OpenAI Assistant ID
-   OPENAI_ASSISTANT_ID=your_openai_assistant_id_here
-
-   # Twilio Credentials
-   TWILIO_ACCOUNT_SID=your_twilio_account_sid_here
-   TWILIO_AUTH_TOKEN=your_twilio_auth_token_here
-   TWILIO_PHONE_NUMBER=your_twilio_phone_number_here
-
-   # Supabase Credentials
-   SUPABASE_URL=your_supabase_url_here
-   SUPABASE_API_KEY=your_supabase_api_key_here
-
-   # Webhook URL
-   WEBHOOK_URL=your_webhook_url_here
-
-   # Server Port (optional, defaults to 5050)
-   PORT=5050
-   ```
+4. Fill in your API keys and credentials in the `.env` file.
 
 ## Usage
 
-### Starting the Server
+### Local Development
 
-To start the server with Supabase integration:
-
+Start the server:
 ```
-npm run start:supabase
-```
-
-For development with auto-restart on file changes:
-
-```
-npm run dev:supabase
+node index.js
 ```
 
-### Accessing the Dashboard
+The server will run on port 5050 by default.
 
-Once the server is running, you can access the web dashboard at:
+### SMS Handling Modes
 
-```
-http://localhost:5050
-```
+The system supports two modes of operation:
 
-### Setting Up OpenAI Assistant
+1. **Direct Handling (Default)**: The server processes SMS messages directly using OpenAI and sends responses via Twilio.
+   - Set `USE_MAKE_WEBHOOK=false` in your `.env` file
 
-1. Create an Assistant in the OpenAI platform (https://platform.openai.com/assistants)
-2. Configure the Assistant with your desired instructions and capabilities
-3. Copy the Assistant ID and add it to your `.env` file as `OPENAI_ASSISTANT_ID`
-4. The system will now use your Assistant's instructions for SMS conversations
+2. **Make.com Integration**: The server forwards SMS messages to your Make.com webhook for processing.
+   - Set `USE_MAKE_WEBHOOK=true` in your `.env` file
+   - Configure your Make.com scenario according to the blueprint
 
-The application will automatically fetch the instructions from your OpenAI Assistant and use them as the system message for SMS conversations. If the Assistant cannot be reached, it will fall back to a default system message.
+## Deployment to Google Cloud Run
 
-### Setting Up Twilio
+### Option 1: Manual Deployment
 
-1. In your Twilio account, set up your phone number with the following webhook URLs:
+1. Build the Docker image:
+   ```
+   docker build -t gcr.io/your-project-id/ai-sms .
+   ```
 
-   - For SMS:
-     - When a message comes in: `http://your-server-url/sms` (HTTP POST)
+2. Push the image to Google Container Registry:
+   ```
+   docker push gcr.io/your-project-id/ai-sms
+   ```
 
-   - For Voice:
-     - A call comes in: `http://your-server-url/incoming-call` (HTTP POST)
+3. Deploy to Cloud Run:
+   ```
+   gcloud run deploy ai-sms --image gcr.io/your-project-id/ai-sms --platform managed --region us-central1 --allow-unauthenticated
+   ```
 
-2. Make sure your server is accessible from the internet (you may need to use a service like ngrok for local development).
+4. Set environment variables in the Cloud Run console:
+   - Go to Cloud Run > Select your service > Edit & Deploy New Revision
+   - Expand "Container, Networking, Security" section
+   - Add each environment variable under "Environment variables"
 
-### Sending Messages to Leads
+### Option 2: Automated Deployment with Cloud Build
 
-To send messages to new leads, make a POST request to:
+1. Connect your GitHub repository to Google Cloud Build
+2. Configure the Cloud Build trigger to use the `cloudbuild.yaml` file
+3. Set up the following substitution variables in your Cloud Build trigger:
+   - _OPENAI_API_KEY
+   - _TWILIO_ACCOUNT_SID
+   - _TWILIO_AUTH_TOKEN
+   - _TWILIO_PHONE_NUMBER
+   - _OPENAI_ASSISTANT_ID (optional)
+   - _WEBHOOK_URL
+   - _USE_MAKE_WEBHOOK
 
-```
-POST /check-leads
-```
+4. Commit and push to trigger the deployment
 
-With the following JSON body:
+## Make.com Integration
 
-```json
-{
-  "leads": [
-    {
-      "phoneNumber": "+1234567890",
-      "name": "John Doe"
-    },
-    {
-      "phoneNumber": "+0987654321",
-      "name": "Jane Smith"
-    }
-  ]
-}
-```
-
-## API Endpoints
-
-- `GET /`: Redirects to the dashboard
-- `GET /api/conversations`: Get all conversations
-- `GET /api/conversations/:id`: Get a specific conversation with messages
-- `POST /api/conversations/:id/messages`: Send a message to a conversation
-- `POST /check-leads`: Send messages to new leads
-- `POST /sms`: Webhook for incoming SMS messages
-- `POST /incoming-call`: Webhook for incoming voice calls
-
-## WebSocket
-
-The server provides a WebSocket endpoint at `/ws` for real-time updates. The dashboard automatically connects to this endpoint to receive updates about new messages and conversations.
-
-## Project Structure
-
-- `index.js`: Main server file with OpenAI Assistant integration
-- `index-supabase-fixed.js`: Server file with Supabase integration
-- `public/`: Frontend files for the dashboard
-  - `index.html`: Dashboard HTML
-  - `styles.css`: Dashboard styles
-  - `app.js`: Dashboard JavaScript
-- `.env`: Environment variables (not included in repository)
-- `.env.example`: Example environment variables file
+When using Make.com integration (`USE_MAKE_WEBHOOK=true`):
+- The server forwards SMS messages to your Make.com webhook
+- Your Make.com scenario handles the conversation flow
+- Supabase operations are handled by the Make.com scenario
 
 ## License
 
-ISC
+MIT

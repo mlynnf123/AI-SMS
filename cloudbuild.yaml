@@ -21,6 +21,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--update-env-vars'
+      - 'OPENAI_API_KEY=${_OPENAI_API_KEY},TWILIO_ACCOUNT_SID=${_TWILIO_ACCOUNT_SID},TWILIO_AUTH_TOKEN=${_TWILIO_AUTH_TOKEN},TWILIO_PHONE_NUMBER=${_TWILIO_PHONE_NUMBER},OPENAI_ASSISTANT_ID=${_OPENAI_ASSISTANT_ID},WEBHOOK_URL=${_WEBHOOK_URL},USE_MAKE_WEBHOOK=${_USE_MAKE_WEBHOOK}'
 
 # Store images in Google Container Registry
 images:
