@@ -200,6 +200,24 @@ fastify.post('/sms', async (request, reply) => {
     const { Body: userMessage, From: userPhone } = request.body;
 
     try {
+        // Check if USE_MAKE_WEBHOOK is set to true
+        if (process.env.USE_MAKE_WEBHOOK === 'true') {
+            console.log('Forwarding SMS to Make.com webhook');
+            // Forward the SMS data to Make.com webhook
+            await sendToWebhook({
+                Body: userMessage,
+                From: userPhone,
+                timestamp: new Date().toISOString(),
+                type: 'incoming_sms'
+            });
+            
+            reply.send({ success: true });
+            return;
+        }
+        
+        // If not using Make.com webhook, handle the conversation directly
+        console.log('Handling SMS conversation directly');
+        
         // Get system message from assistant if available
         let systemMessage = "";
         try {
