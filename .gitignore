@@ -6,7 +6,7 @@ yarn-error.log
 package-lock.json
 
 # Environment variables
-.env
+# .env is intentionally not ignored to support Google Cloud Run deployment
 .env.local
 .env.development.local
 .env.test.local
