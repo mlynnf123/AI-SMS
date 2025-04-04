@@ -13,7 +13,7 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'ai-sms'
+      - 'fml'
       - '--image'
       - 'gcr.io/$PROJECT_ID/ai-sms:$COMMIT_SHA'
       - '--region'
