@@ -169,24 +169,7 @@ If the lead is not a good fit, respectfully end the conversation.`
             const data = await response.json();
             const aiResponse = data.choices[0].message.content;
 
-            // Send SMS using Twilio
-            const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: new URLSearchParams({
-                    'To': phoneNumber,
-                    'From': TWILIO_PHONE_NUMBER,
-                    'Body': aiResponse
-                })
-            });
-
-            if (!twilioResponse.ok) {
-                const twilioError = await twilioResponse.json();
-                throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
-            }
+            // Instead of sending SMS directly, we'll let Make.com handle it
 
             // Initialize conversation state for this lead with AI mode enabled
             smsConversations.set(phoneNumber, {
@@ -291,26 +274,7 @@ async function handleUserResponse(phoneNumber, message) {
                     content: aiResponse
                 });
                 
-                // Send the AI response
-                const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: new URLSearchParams({
-                        'To': phoneNumber,
-                        'From': TWILIO_PHONE_NUMBER,
-                        'Body': aiResponse
-                    })
-                });
-                
-                if (!twilioResponse.ok) {
-                    const twilioError = await twilioResponse.json();
-                    throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
-                }
-                
-                // Send to webhook for tracking
+                // Instead of sending SMS directly, only send to webhook for Make.com to handle
                 await sendToWebhook({
                     Body: aiResponse,
                     From: TWILIO_PHONE_NUMBER,
@@ -385,25 +349,6 @@ async function processNextStep(phoneNumber, userName = '') {
             }
             
             if (message) {
-                // Send the message via Twilio
-                const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: new URLSearchParams({
-                        'To': phoneNumber,
-                        'From': TWILIO_PHONE_NUMBER,
-                        'Body': message
-                    })
-                });
-                
-                if (!twilioResponse.ok) {
-                    const twilioError = await twilioResponse.json();
-                    throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
-                }
-                
                 // Set waiting state if we expect a response (not for the last step)
                 if (state.step < 4) {
                     state.waitingForUserResponse = true;
@@ -412,7 +357,7 @@ async function processNextStep(phoneNumber, userName = '') {
                 // Update the state in the map
                 smsConversations.set(phoneNumber, state);
                 
-                // Send to webhook for tracking
+                // Only send to webhook for Make.com to handle the SMS sending
                 await sendToWebhook({
                     Body: message,
                     From: TWILIO_PHONE_NUMBER,
