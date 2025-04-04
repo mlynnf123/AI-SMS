@@ -389,6 +389,31 @@ async function processNextStep(phoneNumber, userName = '') {
     }
 }
 
+// Route to handle Twilio message status callbacks
+fastify.post('/message-status', async (request, reply) => {
+  const { MessageSid, MessageStatus, To, From } = request.body;
+  
+  console.log(`Message ${MessageSid} to ${To} from ${From} has status: ${MessageStatus}`);
+  
+  // Send an immediate acknowledgment response
+  reply.send({ success: true, message: "Status received" });
+  
+  try {
+    // Forward the status to Make.com webhook
+    await sendToWebhook({
+      MessageSid,
+      MessageStatus,
+      To,
+      From,
+      timestamp: new Date().toISOString(),
+      direction: 'status_update'
+    });
+  } catch (webhookError) {
+    console.error('Webhook error (non-fatal):', webhookError.message);
+    // Continue processing - don't let webhook errors stop the flow
+  }
+});
+
 // Route to handle incoming SMS - MODIFIED TO HANDLE STATE
 fastify.post('/sms', async (request, reply) => {
     const { Body, From } = request.body;
