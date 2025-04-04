@@ -216,7 +216,8 @@ If the lead is not a good fit, respectfully end the conversation.`
                 aiResponse,
                 timestamp: new Date().toISOString(),
                 type: 'initial_outreach',
-                waitingForResponse: true
+                waitingForResponse: true,
+                direction: 'outbound'
             });
         }
 
@@ -751,7 +752,11 @@ async function processTranscriptAndSend(transcript, sessionId = null) {
 
                 if (parsedContent) {
                     // Send the parsed content directly to the webhook
-                    await sendToWebhook(parsedContent);
+                    await sendToWebhook({
+                        ...parsedContent,
+                        direction: 'outbound',
+                        type: 'transcript_analysis'
+                    });
                     console.log('Extracted and sent customer details:', parsedContent);
                 } else {
                     console.error('Unexpected JSON structure in ChatGPT response');
