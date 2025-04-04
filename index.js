@@ -19,7 +19,11 @@ if (!OPENAI_API_KEY) {
 
 // Initialize Fastify
 const fastify = Fastify({
-    logger: true
+    logger: true,
+    // Set request timeout to 5 seconds to avoid long-running requests
+    connectionTimeout: 5000,
+    // Set keep-alive timeout to 5 seconds
+    keepAliveTimeout: 5000
 });
 fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
@@ -68,7 +72,7 @@ async function fetchAssistantInfo(assistantId) {
             headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v1'
+                'OpenAI-Beta': 'assistants=v2'
             }
         });
 
@@ -209,6 +213,9 @@ If the lead is not a good fit, respectfully end the conversation.`
 fastify.post('/sms', async (request, reply) => {
     const { Body, From } = request.body;
 
+    // Send an immediate acknowledgment response
+    reply.send({ success: true, message: "SMS received, processing" });
+
     try {
         console.log('Received SMS:', { Body, From });
         
@@ -219,18 +226,9 @@ fastify.post('/sms', async (request, reply) => {
             From,
             timestamp: new Date().toISOString()
         });
-        
-        reply.send({ success: true });
     } catch (error) {
         console.error('Error forwarding SMS to webhook:', error);
-        // Provide more detailed error information
-        const errorMessage = error.message || 'Unknown error';
-        const errorDetails = error.response?.data || {};
-        reply.status(500).send({ 
-            error: 'Internal server error', 
-            message: errorMessage,
-            details: errorDetails
-        });
+        // Don't throw the error to prevent interrupting the flow
     }
 });
 
@@ -451,15 +449,24 @@ async function makeChatGPTCompletion(transcript) {
 async function sendToWebhook(payload) {
     console.log('Sending data to webhook:', JSON.stringify(payload, null, 2));
     try {
+        // Set a timeout for the webhook request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
         const response = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            // Send payload directly without wrapping in {data: payload}
-            body: JSON.stringify(payload)
+            // Wrap payload in data object to match Make.com expectations
+            body: JSON.stringify({
+                data: payload
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         const responseText = await response.text();
         console.log('Webhook response:', responseText);
@@ -470,8 +477,13 @@ async function sendToWebhook(payload) {
         
         return true;
     } catch (error) {
-        console.error('Error sending data to webhook:', error);
-        throw error;
+        if (error.name === 'AbortError') {
+            console.error('Webhook request timed out after 5 seconds');
+        } else {
+            console.error('Error sending data to webhook:', error);
+        }
+        // Don't rethrow the error to prevent interrupting the flow
+        return false;
     }
 }
 
