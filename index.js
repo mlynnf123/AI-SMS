@@ -204,15 +204,17 @@ If the lead is not a good fit, respectfully end the conversation.`
 
 // Route to handle incoming SMS - MODIFIED TO FORWARD TO MAKE.COM
 fastify.post('/sms', async (request, reply) => {
-    const { Body: userMessage, From: userPhone } = request.body;
+    const { Body, From } = request.body;
 
     try {
-        // Forward the SMS data to Make.com webhook without processing
+        console.log('Received SMS:', { Body, From });
+        
+        // Forward the SMS data to Make.com webhook using the exact field names that Make.com expects
+        // Make.com expects Twilio's standard field names (Body, From) directly
         await sendToWebhook({
-            userPhone,
-            userMessage,
-            timestamp: new Date().toISOString(),
-            type: 'incoming_sms'
+            Body,
+            From,
+            timestamp: new Date().toISOString()
         });
         
         reply.send({ success: true });
@@ -452,9 +454,8 @@ async function sendToWebhook(payload) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({
-                data: payload
-            })
+            // Send payload directly without wrapping in {data: payload}
+            body: JSON.stringify(payload)
         });
 
         const responseText = await response.text();
