@@ -45,7 +45,11 @@ const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. 
 const VOICE = 'Professional, enthusiastic';
 // Cloud Run sets PORT=8080 by default
 const PORT = process.env.PORT || 8080;
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
+if (!WEBHOOK_URL) {
+    console.error('Missing WEBHOOK_URL in environment variables');
+    process.exit(1);
+}
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
 // Log environment variables for debugging
