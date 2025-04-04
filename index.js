@@ -44,7 +44,7 @@ fastify.addHook('onRequest', (request, reply, done) => {
 const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. Your job is to engage potential leads, qualify them based on key criteria, and guide them toward booking a meeting. Your responses should feel natural, engaging, and conversational—mimicking human texting behavior';
 const VOICE = 'Professional, enthusiastic';
 const PORT = process.env.PORT || 5050;
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
 // Session management
@@ -447,12 +447,15 @@ fastify.register(async (fastify) => {
     });
 });
 
-fastify.listen({ port: PORT }, (err) => {
+fastify.listen({ 
+    port: PORT,
+    host: '0.0.0.0' // Listen on all network interfaces, required for Cloud Run
+}, (err) => {
     if (err) {
         console.error(err);
         process.exit(1);
     }
-    console.log(`Server is listening on port ${PORT}`);
+    console.log(`Server is listening on port ${PORT} and host 0.0.0.0`);
 });
 
 // Function to make ChatGPT API completion call with structured outputs
