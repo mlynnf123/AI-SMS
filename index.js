@@ -51,7 +51,7 @@ const VOICE = 'Professional, enthusiastic';
 const PORT = process.env.PORT || 8080;
 // Get webhook URL from environment variables with a default value
 // This allows the webhook URL to be changed easily in the .env file
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
 console.log('Using webhook URL:', WEBHOOK_URL);
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
@@ -193,15 +193,20 @@ If the lead is not a good fit, respectfully end the conversation.`
             console.log(`Initialized conversation state for ${phoneNumber}, waiting for response`);
 
             // Send conversation data to webhook for tracking
-            await sendToWebhook({
-                userPhone: phoneNumber,
-                userName: name,
-                aiResponse,
-                timestamp: new Date().toISOString(),
-                type: 'initial_outreach',
-                waitingForResponse: true,
-                direction: 'outbound'
-            });
+            try {
+                await sendToWebhook({
+                    userPhone: phoneNumber,
+                    userName: name,
+                    aiResponse,
+                    timestamp: new Date().toISOString(),
+                    type: 'initial_outreach',
+                    waitingForResponse: true,
+                    direction: 'outbound'
+                });
+            } catch (webhookError) {
+                console.error('Webhook error (non-fatal):', webhookError.message);
+                // Continue processing - don't let webhook errors stop the flow
+            }
         }
 
         reply.send({ success: true, message: "Outreach messages sent" });
@@ -275,14 +280,19 @@ async function handleUserResponse(phoneNumber, message) {
                 });
                 
                 // Instead of sending SMS directly, only send to webhook for Make.com to handle
-                await sendToWebhook({
-                    Body: aiResponse,
-                    From: TWILIO_PHONE_NUMBER,
-                    To: phoneNumber,
-                    timestamp: new Date().toISOString(),
-                    direction: 'outbound',
-                    aiGenerated: true
-                });
+                try {
+                    await sendToWebhook({
+                        Body: aiResponse,
+                        From: TWILIO_PHONE_NUMBER,
+                        To: phoneNumber,
+                        timestamp: new Date().toISOString(),
+                        direction: 'outbound',
+                        aiGenerated: true
+                    });
+                } catch (webhookError) {
+                    console.error('Webhook error (non-fatal):', webhookError.message);
+                    // Continue processing - don't let webhook errors stop the flow
+                }
                 
                 // Set waiting state back to true since we're expecting another response
                 state.waitingForUserResponse = true;
@@ -358,13 +368,18 @@ async function processNextStep(phoneNumber, userName = '') {
                 smsConversations.set(phoneNumber, state);
                 
                 // Only send to webhook for Make.com to handle the SMS sending
-                await sendToWebhook({
-                    Body: message,
-                    From: TWILIO_PHONE_NUMBER,
-                    To: phoneNumber,
-                    timestamp: new Date().toISOString(),
-                    direction: 'outbound'
-                });
+                try {
+                    await sendToWebhook({
+                        Body: message,
+                        From: TWILIO_PHONE_NUMBER,
+                        To: phoneNumber,
+                        timestamp: new Date().toISOString(),
+                        direction: 'outbound'
+                    });
+                } catch (webhookError) {
+                    console.error('Webhook error (non-fatal):', webhookError.message);
+                    // Continue processing - don't let webhook errors stop the flow
+                }
             }
         } catch (error) {
             console.error('Error processing next step:', error);
@@ -392,13 +407,18 @@ fastify.post('/sms', async (request, reply) => {
             await handleUserResponse(From, Body);
             
             // Forward the SMS data to Make.com webhook
-            await sendToWebhook({
-                Body,
-                From,
-                timestamp: new Date().toISOString(),
-                direction: 'inbound',
-                step: state.step
-            });
+            try {
+                await sendToWebhook({
+                    Body,
+                    From,
+                    timestamp: new Date().toISOString(),
+                    direction: 'inbound',
+                    step: state.step
+                });
+            } catch (webhookError) {
+                console.error('Webhook error (non-fatal):', webhookError.message);
+                // Continue processing - don't let webhook errors stop the flow
+            }
             
             // Only process the next step if we're not using AI-driven responses
             // If using AI, the handleUserResponse function already sends a response
@@ -415,13 +435,18 @@ fastify.post('/sms', async (request, reply) => {
                 await processNextStep(From);
             } else {
                 // Still log the message to webhook for tracking
-                await sendToWebhook({
-                    Body,
-                    From,
-                    timestamp: new Date().toISOString(),
-                    direction: 'inbound',
-                    ignored: true
-                });
+                try {
+                    await sendToWebhook({
+                        Body,
+                        From,
+                        timestamp: new Date().toISOString(),
+                        direction: 'inbound',
+                        ignored: true
+                    });
+                } catch (webhookError) {
+                    console.error('Webhook error (non-fatal):', webhookError.message);
+                    // Continue processing - don't let webhook errors stop the flow
+                }
             }
         }
     } catch (error) {
@@ -641,6 +666,11 @@ async function makeChatGPTCompletion(transcript) {
 
 // Function to send data to Make.com webhook
 async function sendToWebhook(payload) {
+    if (!WEBHOOK_URL) {
+        console.warn('Webhook URL not configured, skipping webhook call');
+        return;
+    }
+
     console.log('Sending data to webhook:', JSON.stringify(payload, null, 2));
     try {
         // Set a timeout for the webhook request
@@ -668,7 +698,7 @@ async function sendToWebhook(payload) {
         if (!response.ok) {
             throw new Error(`Webhook error: ${response.status} ${response.statusText}\n${responseText}`);
         }
-        
+
         return true;
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -676,8 +706,7 @@ async function sendToWebhook(payload) {
         } else {
             console.error('Error sending data to webhook:', error);
         }
-        // Don't rethrow the error to prevent interrupting the flow
-        return false;
+        throw error; // Rethrow the error to allow the calling function to handle it
     }
 }
 
@@ -697,12 +726,17 @@ async function processTranscriptAndSend(transcript, sessionId = null) {
 
                 if (parsedContent) {
                     // Send the parsed content directly to the webhook
-                    await sendToWebhook({
-                        ...parsedContent,
-                        direction: 'outbound',
-                        type: 'transcript_analysis'
-                    });
-                    console.log('Extracted and sent customer details:', parsedContent);
+                    try {
+                        await sendToWebhook({
+                            ...parsedContent,
+                            direction: 'outbound',
+                            type: 'transcript_analysis'
+                        });
+                        console.log('Extracted and sent customer details:', parsedContent);
+                    } catch (webhookError) {
+                        console.error('Webhook error (non-fatal):', webhookError.message);
+                        // Continue processing - don't let webhook errors stop the flow
+                    }
                 } else {
                     console.error('Unexpected JSON structure in ChatGPT response');
                 }
