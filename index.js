@@ -64,10 +64,13 @@ console.log('WEBHOOK_URL:', WEBHOOK_URL);
 // Session management
 const sessions = new Map();
 
+// SMS conversation state management
+const smsConversations = new Map();
+
 // Function to fetch OpenAI Assistant information
 async function fetchAssistantInfo(assistantId) {
     try {
-        const response = await fetch(`https://api.openai.com/v2/assistants/${assistantId}`, {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
@@ -185,13 +188,35 @@ If the lead is not a good fit, respectfully end the conversation.`
                 throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
             }
 
+            // Initialize conversation state for this lead with AI mode enabled
+            smsConversations.set(phoneNumber, {
+                waitingForUserResponse: true,
+                step: 1,
+                userName: name,
+                lastMessage: aiResponse,
+                useAI: true,
+                history: [
+                    {
+                        role: 'system',
+                        content: SYSTEM_MESSAGE
+                    },
+                    {
+                        role: 'assistant',
+                        content: aiResponse
+                    }
+                ]
+            });
+
+            console.log(`Initialized conversation state for ${phoneNumber}, waiting for response`);
+
             // Send conversation data to webhook for tracking
             await sendToWebhook({
                 userPhone: phoneNumber,
                 userName: name,
                 aiResponse,
                 timestamp: new Date().toISOString(),
-                type: 'initial_outreach'
+                type: 'initial_outreach',
+                waitingForResponse: true
             });
         }
 
@@ -209,7 +234,201 @@ If the lead is not a good fit, respectfully end the conversation.`
     }
 });
 
-// Route to handle incoming SMS - MODIFIED TO FORWARD TO MAKE.COM
+// Function to handle user response
+async function handleUserResponse(phoneNumber, message) {
+    console.log(`Handling user response from ${phoneNumber}: ${message}`);
+    
+    if (!smsConversations.has(phoneNumber)) {
+        console.warn(`No conversation state found for ${phoneNumber}`);
+        return;
+    }
+    
+    const state = smsConversations.get(phoneNumber);
+    
+    try {
+        // Store the user's message in the conversation history
+        if (!state.history) {
+            state.history = [];
+        }
+        
+        // Add the user's message to history
+        state.history.push({
+            role: 'user',
+            content: message
+        });
+        
+        // For more complex conversations, you could use OpenAI to generate a response
+        // based on the conversation history
+        if (state.useAI) {
+            // Make ChatGPT API call for response
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o",
+                    messages: [
+                        {
+                            role: "system",
+                            content: SYSTEM_MESSAGE
+                        },
+                        ...state.history
+                    ]
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                const aiResponse = data.choices[0].message.content;
+                
+                // Add AI response to history
+                state.history.push({
+                    role: 'assistant',
+                    content: aiResponse
+                });
+                
+                // Send the AI response
+                const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        'To': phoneNumber,
+                        'From': TWILIO_PHONE_NUMBER,
+                        'Body': aiResponse
+                    })
+                });
+                
+                if (!twilioResponse.ok) {
+                    const twilioError = await twilioResponse.json();
+                    throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
+                }
+                
+                // Send to webhook for tracking
+                await sendToWebhook({
+                    Body: aiResponse,
+                    From: TWILIO_PHONE_NUMBER,
+                    To: phoneNumber,
+                    timestamp: new Date().toISOString(),
+                    direction: 'outbound',
+                    aiGenerated: true
+                });
+                
+                // Set waiting state back to true since we're expecting another response
+                state.waitingForUserResponse = true;
+            } else {
+                console.error('Unexpected response structure from OpenAI API');
+                state.waitingForUserResponse = false;
+            }
+        } else {
+            // For the structured conversation flow, just reset the waiting state
+            // The next step will be handled by processNextStep
+            state.waitingForUserResponse = false;
+        }
+        
+        // Update the state
+        smsConversations.set(phoneNumber, state);
+    } catch (error) {
+        console.error(`Error handling user response from ${phoneNumber}:`, error);
+        // Reset the waiting state in case of error
+        state.waitingForUserResponse = false;
+        smsConversations.set(phoneNumber, state);
+    }
+}
+
+// Function to process the next step in the conversation
+async function processNextStep(phoneNumber, userName = '') {
+    console.log(`Processing next step for ${phoneNumber}`);
+    
+    // Get or initialize conversation state
+    let state = smsConversations.get(phoneNumber) || { 
+        waitingForUserResponse: false,
+        step: 0,
+        userName: userName,
+        useAI: true // Default to AI-driven responses
+    };
+    
+    // Only proceed if we're not waiting for a response
+    if (!state.waitingForUserResponse) {
+        try {
+            // Increment step counter
+            state.step += 1;
+            
+            // Example of sending a message based on the current step
+            let message = '';
+            
+            switch (state.step) {
+                case 1:
+                    message = `Hi${state.userName ? ' ' + state.userName : ''}! What service are you interested in?`;
+                    break;
+                case 2:
+                    message = "Great! When would you like to schedule your appointment?";
+                    break;
+                case 3:
+                    message = "Perfect! Is there anything else we should know before your appointment?";
+                    break;
+                case 4:
+                    message = "Thank you for providing all the information. We've scheduled your appointment!";
+                    // End of conversation, no need to wait for response
+                    state.waitingForUserResponse = false;
+                    break;
+                default:
+                    // Reset the conversation if we've gone through all steps
+                    state = { waitingForUserResponse: false, step: 0, userName: state.userName, useAI: true };
+                    message = "Is there anything else I can help you with?";
+            }
+            
+            if (message) {
+                // Send the message via Twilio
+                const twilioResponse = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        'To': phoneNumber,
+                        'From': TWILIO_PHONE_NUMBER,
+                        'Body': message
+                    })
+                });
+                
+                if (!twilioResponse.ok) {
+                    const twilioError = await twilioResponse.json();
+                    throw new Error(`Failed to send SMS: ${JSON.stringify(twilioError)}`);
+                }
+                
+                // Set waiting state if we expect a response (not for the last step)
+                if (state.step < 4) {
+                    state.waitingForUserResponse = true;
+                }
+                
+                // Update the state in the map
+                smsConversations.set(phoneNumber, state);
+                
+                // Send to webhook for tracking
+                await sendToWebhook({
+                    Body: message,
+                    From: TWILIO_PHONE_NUMBER,
+                    To: phoneNumber,
+                    timestamp: new Date().toISOString(),
+                    direction: 'outbound'
+                });
+            }
+        } catch (error) {
+            console.error('Error processing next step:', error);
+        }
+    } else {
+        console.log(`Skipping next step for ${phoneNumber} - waiting for user response`);
+    }
+}
+
+// Route to handle incoming SMS - MODIFIED TO HANDLE STATE
 fastify.post('/sms', async (request, reply) => {
     const { Body, From } = request.body;
 
@@ -219,15 +438,48 @@ fastify.post('/sms', async (request, reply) => {
     try {
         console.log('Received SMS:', { Body, From });
         
-        // Forward the SMS data to Make.com webhook using the exact field names that Make.com expects
-        // Make.com expects Twilio's standard field names (Body, From) directly
-        await sendToWebhook({
-            Body,
-            From,
-            timestamp: new Date().toISOString()
-        });
+        // Check if we're waiting for a response from this user
+        const state = smsConversations.get(From) || { waitingForUserResponse: false, step: 0, useAI: true };
+        
+        if (state.waitingForUserResponse) {
+            // Process the user's reply for current step
+            await handleUserResponse(From, Body);
+            
+            // Forward the SMS data to Make.com webhook
+            await sendToWebhook({
+                Body,
+                From,
+                timestamp: new Date().toISOString(),
+                direction: 'inbound',
+                step: state.step
+            });
+            
+            // Only process the next step if we're not using AI-driven responses
+            // If using AI, the handleUserResponse function already sends a response
+            if (!state.useAI) {
+                // Process the next step
+                await processNextStep(From);
+            }
+        } else {
+            console.log(`Ignoring message from ${From}, not expecting user response yet.`);
+            
+            // If this is a new conversation, initialize it and start
+            if (!smsConversations.has(From) || state.step === 0) {
+                smsConversations.set(From, { waitingForUserResponse: false, step: 0, useAI: true });
+                await processNextStep(From);
+            } else {
+                // Still log the message to webhook for tracking
+                await sendToWebhook({
+                    Body,
+                    From,
+                    timestamp: new Date().toISOString(),
+                    direction: 'inbound',
+                    ignored: true
+                });
+            }
+        }
     } catch (error) {
-        console.error('Error forwarding SMS to webhook:', error);
+        console.error('Error handling SMS:', error);
         // Don't throw the error to prevent interrupting the flow
     }
 });
@@ -437,11 +689,7 @@ async function makeChatGPTCompletion(transcript) {
         // Provide more detailed error information
         const errorMessage = error.message || 'Unknown error';
         const errorDetails = error.response?.data || {};
-        reply.status(500).send({ 
-            error: 'Internal server error', 
-            message: errorMessage,
-            details: errorDetails
-        });
+        return { error: errorMessage, details: errorDetails };
     }
 }
 
