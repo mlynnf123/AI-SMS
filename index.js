@@ -43,9 +43,16 @@ fastify.addHook('onRequest', (request, reply, done) => {
 // Constants
 const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. Your job is to engage potential leads, qualify them based on key criteria, and guide them toward booking a meeting. Your responses should feel natural, engaging, and conversational—mimicking human texting behavior';
 const VOICE = 'Professional, enthusiastic';
-const PORT = process.env.PORT || 5050;
+// Cloud Run sets PORT=8080 by default
+const PORT = process.env.PORT || 8080;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
+
+// Log environment variables for debugging
+console.log('Starting server with environment variables:');
+console.log('PORT:', process.env.PORT);
+console.log('USE_MAKE_WEBHOOK:', process.env.USE_MAKE_WEBHOOK);
+console.log('WEBHOOK_URL:', WEBHOOK_URL);
 
 // Session management
 const sessions = new Map();
@@ -501,11 +508,11 @@ async function makeChatGPTCompletion(transcript) {
         // Provide more detailed error information
         const errorMessage = error.message || 'Unknown error';
         const errorDetails = error.response?.data || {};
-        reply.status(500).send({ 
-            error: 'Internal server error', 
+        return {
+            error: 'Error making ChatGPT API call',
             message: errorMessage,
             details: errorDetails
-        });
+        };
     }
 }
 
