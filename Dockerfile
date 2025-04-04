@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 5050
 
 # Command to run the application
-CMD ["node", "simple-server.js"]
+CMD ["node", "index.js"]
