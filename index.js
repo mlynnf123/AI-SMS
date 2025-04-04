@@ -51,7 +51,7 @@ const VOICE = 'Professional, enthusiastic';
 const PORT = process.env.PORT || 8080;
 // Get webhook URL from environment variables with a default value
 // This allows the webhook URL to be changed easily in the .env file
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
 console.log('Using webhook URL:', WEBHOOK_URL);
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
