@@ -3,6 +3,10 @@ const http = require('http');
 
 // Get port from environment variable
 const PORT = process.env.PORT || 5050;
+console.log('Starting server with environment variables:');
+console.log('PORT:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('All environment variables:', Object.keys(process.env));
 
 // Create a simple server
 const server = http.createServer((req, res) => {
@@ -90,16 +94,28 @@ const server = http.createServer((req, res) => {
 });
 
 // Start the server
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running at http://0.0.0.0:${PORT}/`);
-  console.log(`Environment variables: PORT=${PORT}`);
-  console.log('Server is ready to handle requests');
-});
+try {
+  console.log(`Attempting to start server on port ${PORT}...`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running at http://0.0.0.0:${PORT}/`);
+    console.log(`Environment variables: PORT=${PORT}`);
+    console.log('Server is ready to handle requests');
+  });
 
-// Handle server errors
-server.on('error', (error) => {
-  console.error('Server error:', error);
-});
+  // Handle server errors
+  server.on('error', (error) => {
+    console.error('Server error:', error);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Try a different port.`);
+    } else if (error.code === 'EACCES') {
+      console.error(`Port ${PORT} requires elevated privileges.`);
+    }
+    // Don't exit the process to give Cloud Run a chance to see the logs
+    console.error('Server failed to start. Error details:', error);
+  });
+} catch (error) {
+  console.error('Unexpected error starting server:', error);
+}
 
 // Log uncaught exceptions
 process.on('uncaughtException', (error) => {
