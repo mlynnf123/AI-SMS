@@ -45,11 +45,10 @@ const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. 
 const VOICE = 'Professional, enthusiastic';
 // Cloud Run sets PORT=8080 by default
 const PORT = process.env.PORT || 8080;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
-if (!WEBHOOK_URL) {
-    console.error('Missing WEBHOOK_URL in environment variables');
-    process.exit(1);
-}
+// Get webhook URL from environment variables with a default value
+// This allows the webhook URL to be changed easily in the .env file
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
+console.log('Using webhook URL:', WEBHOOK_URL);
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
 
 // Log environment variables for debugging
@@ -64,7 +63,7 @@ const sessions = new Map();
 // Function to fetch OpenAI Assistant information
 async function fetchAssistantInfo(assistantId) {
     try {
-        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+        const response = await fetch(`https://api.openai.com/v2/assistants/${assistantId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`,
