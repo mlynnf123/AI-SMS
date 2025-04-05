@@ -55,48 +55,18 @@ const processedMessages = new Map(); // Track processed message IDs and timestam
 const rateLimiter = new Map(); // phone -> last message timestamp
 // Get webhook URL from environment variables
 // This allows the webhook URL to be changed easily in the .env file
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
 if (!WEBHOOK_URL) {
   console.error('Missing WEBHOOK_URL in environment variables');
   process.exit(1);
 }
 console.log('Using webhook URL:', WEBHOOK_URL);
-const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
-// Log environment variables for debugging
-console.log('Starting server with environment variables:');
-console.log('PORT:', process.env.PORT);
-console.log('USE_MAKE_WEBHOOK:', process.env.USE_MAKE_WEBHOOK);
-console.log('WEBHOOK_URL:', WEBHOOK_URL);
 
 // Session management
 const sessions = new Map();
 
-// SMS conversation state management
+// SMS conversation history management
 const smsConversations = new Map();
-
-// Function to fetch OpenAI Assistant information
-async function fetchAssistantInfo(assistantId) {
-    try {
-        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Failed to fetch assistant: ${JSON.stringify(errorData)}`);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error('Error fetching assistant:', error);
-        throw error;
-    }
-}
 
 // List of Event Types to log to the console
 const LOG_EVENT_TYPES = [
@@ -176,28 +146,23 @@ If the lead is not a good fit, respectfully end the conversation.`
             const data = await response.json();
             const aiResponse = data.choices[0].message.content;
 
-            // Instead of sending SMS directly, we'll let Make.com handle it
-
-            // Initialize conversation state for this lead with AI mode enabled
-            smsConversations.set(phoneNumber, {
-                waitingForUserResponse: true,
-                step: 1,
-                userName: name,
-                lastMessage: aiResponse,
-                useAI: true,
-                history: [
-                    {
-                        role: 'system',
-                        content: SYSTEM_MESSAGE
-                    },
-                    {
-                        role: 'assistant',
-                        content: aiResponse
-                    }
-                ]
+            // Initialize conversation history for this lead
+            if (!smsConversations.has(phoneNumber)) {
+                smsConversations.set(phoneNumber, []);
+            }
+            
+            // Add the AI's initial message to the conversation history
+            const conversationHistory = smsConversations.get(phoneNumber);
+            conversationHistory.push({
+                role: 'system',
+                content: SYSTEM_MESSAGE
+            });
+            conversationHistory.push({
+                role: 'assistant',
+                content: aiResponse
             });
 
-            console.log(`Initialized conversation state for ${phoneNumber}, waiting for response`);
+            console.log(`Initialized conversation for ${phoneNumber}, sending initial message`);
 
             // Send conversation data to webhook for tracking
             try {
@@ -207,7 +172,6 @@ If the lead is not a good fit, respectfully end the conversation.`
                     aiResponse,
                     timestamp: new Date().toISOString(),
                     type: 'initial_outreach',
-                    waitingForResponse: true,
                     direction: 'outbound'
                 });
             } catch (webhookError) {
@@ -230,196 +194,6 @@ If the lead is not a good fit, respectfully end the conversation.`
     }
 });
 
-// Function to handle user response
-async function handleUserResponse(phoneNumber, message) {
-    console.log(`Handling user response from ${phoneNumber}: ${message}`);
-    
-    if (!smsConversations.has(phoneNumber)) {
-        console.warn(`No conversation state found for ${phoneNumber}`);
-        return;
-    }
-    
-    const state = smsConversations.get(phoneNumber);
-    
-    // Log the current state for debugging
-    console.log(`Current state for ${phoneNumber} before handling response:`, {
-        waitingForUserResponse: state.waitingForUserResponse,
-        step: state.step,
-        useAI: state.useAI,
-        lastMessageTime: state.lastMessageTime || 'not set'
-    });
-    
-    try {
-        // Store the user's message in the conversation history
-        if (!state.history) {
-            state.history = [];
-        }
-        
-        // Add the user's message to history
-        state.history.push({
-            role: 'user',
-            content: message
-        });
-        
-        // For more complex conversations, you could use OpenAI to generate a response
-        // based on the conversation history
-        if (state.useAI) {
-            // Make ChatGPT API call for response
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: "gpt-4o",
-                    messages: [
-                        {
-                            role: "system",
-                            content: SYSTEM_MESSAGE
-                        },
-                        ...state.history
-                    ]
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.choices && data.choices[0] && data.choices[0].message) {
-                const aiResponse = data.choices[0].message.content;
-                
-                // Add AI response to history
-                state.history.push({
-                    role: 'assistant',
-                    content: aiResponse
-                });
-                
-                // Update the last message time
-                state.lastMessageTime = Date.now();
-                
-                // Instead of sending SMS directly, only send to webhook for Make.com to handle
-                try {
-                    // Use consistent payload structure with initial outreach
-                    await sendToWebhook({
-                        userPhone: phoneNumber,
-                        aiResponse: aiResponse,
-                        Body: aiResponse, // Include both formats for compatibility
-                        From: TWILIO_PHONE_NUMBER,
-                        To: phoneNumber,
-                        timestamp: new Date().toISOString(),
-                        direction: 'outbound',
-                        aiGenerated: true,
-                        type: 'ai_response',
-                        waitingForUserResponse: true // Explicitly indicate we're waiting for a response
-                    });
-                } catch (webhookError) {
-                    console.error('Webhook error (non-fatal):', webhookError.message);
-                    // Continue processing - don't let webhook errors stop the flow
-                }
-                
-                // Set waiting state back to true since we're expecting another response
-                state.waitingForUserResponse = true;
-            } else {
-                console.error('Unexpected response structure from OpenAI API');
-                state.waitingForUserResponse = false;
-            }
-        } else {
-            // For the structured conversation flow, just reset the waiting state
-            // The next step will be handled by processNextStep
-            state.waitingForUserResponse = false;
-        }
-        
-        // Update the state
-        smsConversations.set(phoneNumber, state);
-    } catch (error) {
-        console.error(`Error handling user response from ${phoneNumber}:`, error);
-        // Reset the waiting state in case of error
-        state.waitingForUserResponse = false;
-        smsConversations.set(phoneNumber, state);
-    }
-}
-
-// Function to process the next step in the conversation
-async function processNextStep(phoneNumber, userName = '') {
-    console.log(`Processing next step for ${phoneNumber}`);
-    
-    // Get or initialize conversation state
-    let state = smsConversations.get(phoneNumber) || { 
-        waitingForUserResponse: false,
-        step: 0,
-        userName: userName,
-        useAI: true // Default to AI-driven responses
-    };
-    
-    // Only proceed if we're not waiting for a response
-    if (!state.waitingForUserResponse) {
-        try {
-            // Increment step counter
-            state.step += 1;
-            
-            // Example of sending a message based on the current step
-            let message = '';
-            
-            switch (state.step) {
-                case 1:
-                    message = `Hi${state.userName ? ' ' + state.userName : ''}! What service are you interested in?`;
-                    break;
-                case 2:
-                    message = "Great! When would you like to schedule your appointment?";
-                    break;
-                case 3:
-                    message = "Perfect! Is there anything else we should know before your appointment?";
-                    break;
-                case 4:
-                    message = "Thank you for providing all the information. We've scheduled your appointment!";
-                    // End of conversation, no need to wait for response
-                    state.waitingForUserResponse = false;
-                    break;
-                default:
-                    // Reset the conversation if we've gone through all steps
-                    state = { waitingForUserResponse: false, step: 0, userName: state.userName, useAI: true };
-                    message = "Is there anything else I can help you with?";
-            }
-            
-            if (message) {
-                // Set waiting state if we expect a response (not for the last step)
-                if (state.step < 4) {
-                    state.waitingForUserResponse = true;
-                }
-                
-                // Update the state in the map
-                smsConversations.set(phoneNumber, state);
-                
-                // Update the last message time
-                state.lastMessageTime = Date.now();
-                
-                // Only send to webhook for Make.com to handle the SMS sending
-                try {
-                    // Use consistent payload structure with initial outreach and AI responses
-                    await sendToWebhook({
-                        userPhone: phoneNumber,
-                        aiResponse: message,
-                        Body: message, // Include both formats for compatibility
-                        From: TWILIO_PHONE_NUMBER,
-                        To: phoneNumber,
-                        timestamp: new Date().toISOString(),
-                        direction: 'outbound',
-                        type: 'next_step',
-                        waitingForUserResponse: state.waitingForUserResponse // Explicitly indicate if we're waiting for a response
-                    });
-                } catch (webhookError) {
-                    console.error('Webhook error (non-fatal):', webhookError.message);
-                    // Continue processing - don't let webhook errors stop the flow
-                }
-            }
-        } catch (error) {
-            console.error('Error processing next step:', error);
-        }
-    } else {
-        console.log(`Skipping next step for ${phoneNumber} - waiting for user response`);
-    }
-}
-
 // Route to handle Twilio message status callbacks
 fastify.post('/message-status', async (request, reply) => {
   const { MessageSid, MessageStatus, To, From } = request.body;
@@ -432,7 +206,7 @@ fastify.post('/message-status', async (request, reply) => {
   try {
     // Forward the status to Make.com webhook
     await sendToWebhook({
-      userPhone: To, // Add userPhone field for consistency
+      userPhone: To,
       MessageSid,
       MessageStatus,
       To,
@@ -476,101 +250,81 @@ fastify.post('/sms', async (request, reply) => {
     reply.send({ success: true, message: "SMS received, processing" });
 
     try {
-        // Get current state before processing
-        const existingState = smsConversations.get(From);
-        console.log(`Received SMS from ${From}:`, { 
-            Body, 
-            MessageSid,
-            currentState: existingState ? {
-                waitingForUserResponse: existingState.waitingForUserResponse,
-                step: existingState.step,
-                processing: existingState.processing
-            } : 'No existing state'
+        console.log('Received SMS:', { Body, From, MessageSid });
+        
+        // Get or initialize conversation history
+        if (!smsConversations.has(From)) {
+            smsConversations.set(From, [
+                { role: 'system', content: SYSTEM_MESSAGE }
+            ]);
+        }
+        
+        const conversationHistory = smsConversations.get(From);
+        
+        // Add the user's message to the conversation history
+        conversationHistory.push({
+            role: 'user',
+            content: Body
         });
         
-        // === IMPROVED STATE MANAGEMENT ===
-        // Get current state or initialize
-        let state = existingState || { 
-            waitingForUserResponse: false, 
-            step: 0, 
-            useAI: true,
-            processing: false, // New flag to prevent concurrent processing
-            lastMessageTime: Date.now() // Track when we last sent a message
-        };
-
-        // Check if already processing
-        if (state.processing) {
-            console.log(`Message from ${From} already being processed, skipping`);
-            return;
-        }
-
-        // Mark as processing
-        state.processing = true;
-        smsConversations.set(From, state);
-
+        // Forward the SMS data to Make.com webhook
         try {
-            if (state.waitingForUserResponse) {
-                // Process the user's reply for current step
-                await handleUserResponse(From, Body);
-                
-                // Forward the SMS data to Make.com webhook
-                try {
-                    await sendToWebhook({
-                        userPhone: From, // Add userPhone field for consistency
-                        Body,
-                        From,
-                        MessageSid,
-                        timestamp: new Date().toISOString(),
-                        direction: 'inbound',
-                        step: state.step,
-                        type: 'user_response'
-                    });
-                } catch (webhookError) {
-                    console.error('Webhook error (non-fatal):', webhookError.message);
-                    // Continue processing - don't let webhook errors stop the flow
-                }
-                
-                // Only process the next step if we're not using AI-driven responses
-                // If using AI, the handleUserResponse function already sends a response
-                if (!state.useAI) {
-                    // Process the next step
-                    await processNextStep(From);
-                }
-            } else {
-                console.log(`Ignoring message from ${From}, not expecting user response yet.`);
-                
-                // If this is a new conversation, initialize it and start
-                if (!smsConversations.has(From) || state.step === 0) {
-                    smsConversations.set(From, { 
-                        waitingForUserResponse: false, 
-                        step: 0, 
-                        useAI: true,
-                        processing: false 
-                    });
-                    await processNextStep(From);
-                } else {
-                    // Still log the message to webhook for tracking
-                    try {
-                        await sendToWebhook({
-                            userPhone: From, // Add userPhone field for consistency
-                            Body,
-                            From,
-                            MessageSid,
-                            timestamp: new Date().toISOString(),
-                            direction: 'inbound',
-                            ignored: true,
-                            type: 'ignored_message'
-                        });
-                    } catch (webhookError) {
-                        console.error('Webhook error (non-fatal):', webhookError.message);
-                        // Continue processing - don't let webhook errors stop the flow
-                    }
-                }
+            await sendToWebhook({
+                userPhone: From,
+                Body,
+                From,
+                MessageSid,
+                timestamp: new Date().toISOString(),
+                direction: 'inbound',
+                type: 'user_response'
+            });
+        } catch (webhookError) {
+            console.error('Webhook error (non-fatal):', webhookError.message);
+            // Continue processing - don't let webhook errors stop the flow
+        }
+        
+        // Make ChatGPT API call for response
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: "gpt-4o",
+                messages: conversationHistory
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            const aiResponse = data.choices[0].message.content;
+            
+            // Add AI response to history
+            conversationHistory.push({
+                role: 'assistant',
+                content: aiResponse
+            });
+            
+            // Send to webhook for Make.com to handle
+            try {
+                await sendToWebhook({
+                    userPhone: From,
+                    aiResponse: aiResponse,
+                    Body: aiResponse,
+                    From: TWILIO_PHONE_NUMBER,
+                    To: From,
+                    timestamp: new Date().toISOString(),
+                    direction: 'outbound',
+                    type: 'ai_response'
+                });
+            } catch (webhookError) {
+                console.error('Webhook error (non-fatal):', webhookError.message);
+                // Continue processing - don't let webhook errors stop the flow
             }
-        } finally {
-            // Clear processing flag when done
-            state.processing = false;
-            smsConversations.set(From, state);
+        } else {
+            console.error('Unexpected response structure from OpenAI API');
         }
     } catch (error) {
         console.error(`Error handling SMS ${MessageSid || 'unknown'}:`, error);
