@@ -49,6 +49,10 @@ const SYSTEM_MESSAGE = 'You are an AI-powered SMS Lead Qualification Assistant. 
 const VOICE = 'Professional, enthusiastic';
 // Cloud Run sets PORT=8080 by default
 const PORT = process.env.PORT || 8080;
+// Add deduplication and rate limiting
+const MESSAGE_DEDUPE_WINDOW_MS = 60000; // 1 minute deduplication window
+const processedMessages = new Map(); // Track processed message IDs and timestamps
+const rateLimiter = new Map(); // phone -> last message timestamp
 // Get webhook URL from environment variables
 // This allows the webhook URL to be changed easily in the .env file
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
@@ -58,7 +62,6 @@ if (!WEBHOOK_URL) {
 }
 console.log('Using webhook URL:', WEBHOOK_URL);
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID || "<input your assistant ID here>";
-
 // Log environment variables for debugging
 console.log('Starting server with environment variables:');
 console.log('PORT:', process.env.PORT);
@@ -418,68 +421,118 @@ fastify.post('/message-status', async (request, reply) => {
   }
 });
 
-// Route to handle incoming SMS - MODIFIED TO HANDLE STATE
+// Route to handle incoming SMS - MODIFIED WITH DEDUPLICATION AND RATE LIMITING
 fastify.post('/sms', async (request, reply) => {
-    const { Body, From } = request.body;
+    const { Body, From, MessageSid } = request.body;
+
+    // === RATE LIMITING ===
+    // Check for rate limiting
+    const lastMessageTime = rateLimiter.get(From) || 0;
+    if (Date.now() - lastMessageTime < 1000) { // 1 second between messages
+        console.log(`Rate limiting ${From} - too many messages`);
+        return reply.send({ success: true, message: "Message rate limited" });
+    }
+    rateLimiter.set(From, Date.now());
+
+    // === DEDUPLICATION LOGIC ===
+    // Check for duplicate messages
+    if (MessageSid && processedMessages.has(MessageSid)) {
+        console.log(`Duplicate message ${MessageSid} detected, ignoring`);
+        return reply.send({ success: true, message: "Duplicate message ignored" });
+    }
+
+    // Add message to processed set with timestamp
+    if (MessageSid) {
+        processedMessages.set(MessageSid, Date.now());
+    }
 
     // Send an immediate acknowledgment response
     reply.send({ success: true, message: "SMS received, processing" });
 
     try {
-        console.log('Received SMS:', { Body, From });
+        console.log('Received SMS:', { Body, From, MessageSid });
         
-        // Check if we're waiting for a response from this user
-        const state = smsConversations.get(From) || { waitingForUserResponse: false, step: 0, useAI: true };
-        
-        if (state.waitingForUserResponse) {
-            // Process the user's reply for current step
-            await handleUserResponse(From, Body);
-            
-            // Forward the SMS data to Make.com webhook
-            try {
-                await sendToWebhook({
-                    Body,
-                    From,
-                    timestamp: new Date().toISOString(),
-                    direction: 'inbound',
-                    step: state.step
-                });
-            } catch (webhookError) {
-                console.error('Webhook error (non-fatal):', webhookError.message);
-                // Continue processing - don't let webhook errors stop the flow
-            }
-            
-            // Only process the next step if we're not using AI-driven responses
-            // If using AI, the handleUserResponse function already sends a response
-            if (!state.useAI) {
-                // Process the next step
-                await processNextStep(From);
-            }
-        } else {
-            console.log(`Ignoring message from ${From}, not expecting user response yet.`);
-            
-            // If this is a new conversation, initialize it and start
-            if (!smsConversations.has(From) || state.step === 0) {
-                smsConversations.set(From, { waitingForUserResponse: false, step: 0, useAI: true });
-                await processNextStep(From);
-            } else {
-                // Still log the message to webhook for tracking
+        // === IMPROVED STATE MANAGEMENT ===
+        // Get current state or initialize
+        let state = smsConversations.get(From) || { 
+            waitingForUserResponse: false, 
+            step: 0, 
+            useAI: true,
+            processing: false // New flag to prevent concurrent processing
+        };
+
+        // Check if already processing
+        if (state.processing) {
+            console.log(`Message from ${From} already being processed, skipping`);
+            return;
+        }
+
+        // Mark as processing
+        state.processing = true;
+        smsConversations.set(From, state);
+
+        try {
+            if (state.waitingForUserResponse) {
+                // Process the user's reply for current step
+                await handleUserResponse(From, Body);
+                
+                // Forward the SMS data to Make.com webhook
                 try {
                     await sendToWebhook({
                         Body,
                         From,
+                        MessageSid,
                         timestamp: new Date().toISOString(),
                         direction: 'inbound',
-                        ignored: true
+                        step: state.step
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
                     // Continue processing - don't let webhook errors stop the flow
                 }
+                
+                // Only process the next step if we're not using AI-driven responses
+                // If using AI, the handleUserResponse function already sends a response
+                if (!state.useAI) {
+                    // Process the next step
+                    await processNextStep(From);
+                }
+            } else {
+                console.log(`Ignoring message from ${From}, not expecting user response yet.`);
+                
+                // If this is a new conversation, initialize it and start
+                if (!smsConversations.has(From) || state.step === 0) {
+                    smsConversations.set(From, { 
+                        waitingForUserResponse: false, 
+                        step: 0, 
+                        useAI: true,
+                        processing: false 
+                    });
+                    await processNextStep(From);
+                } else {
+                    // Still log the message to webhook for tracking
+                    try {
+                        await sendToWebhook({
+                            Body,
+                            From,
+                            MessageSid,
+                            timestamp: new Date().toISOString(),
+                            direction: 'inbound',
+                            ignored: true
+                        });
+                    } catch (webhookError) {
+                        console.error('Webhook error (non-fatal):', webhookError.message);
+                        // Continue processing - don't let webhook errors stop the flow
+                    }
+                }
             }
+        } finally {
+            // Clear processing flag when done
+            state.processing = false;
+            smsConversations.set(From, state);
         }
     } catch (error) {
-        console.error('Error handling SMS:', error);
+        console.error(`Error handling SMS ${MessageSid || 'unknown'}:`, error);
         // Don't throw the error to prevent interrupting the flow
     }
 });
@@ -634,6 +687,20 @@ fastify.register(async (fastify) => {
         });
     });
 });
+
+// Periodically clean up old message IDs from the deduplication map
+setInterval(() => {
+    const now = Date.now();
+    const threshold = now - MESSAGE_DEDUPE_WINDOW_MS;
+    
+    for (const [messageId, timestamp] of processedMessages.entries()) {
+        if (timestamp < threshold) {
+            processedMessages.delete(messageId);
+        }
+    }
+    
+    console.log(`Deduplication cleanup: ${processedMessages.size} messages being tracked`);
+}, 30000); // Run every 30 seconds
 
 fastify.listen({ 
     port: PORT,
