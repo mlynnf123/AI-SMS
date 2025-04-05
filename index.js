@@ -288,13 +288,17 @@ async function handleUserResponse(phoneNumber, message) {
                 
                 // Instead of sending SMS directly, only send to webhook for Make.com to handle
                 try {
+                    // Use consistent payload structure with initial outreach
                     await sendToWebhook({
-                        Body: aiResponse,
+                        userPhone: phoneNumber,
+                        aiResponse: aiResponse,
+                        Body: aiResponse, // Include both formats for compatibility
                         From: TWILIO_PHONE_NUMBER,
                         To: phoneNumber,
                         timestamp: new Date().toISOString(),
                         direction: 'outbound',
-                        aiGenerated: true
+                        aiGenerated: true,
+                        type: 'ai_response'
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -376,12 +380,16 @@ async function processNextStep(phoneNumber, userName = '') {
                 
                 // Only send to webhook for Make.com to handle the SMS sending
                 try {
+                    // Use consistent payload structure with initial outreach and AI responses
                     await sendToWebhook({
-                        Body: message,
+                        userPhone: phoneNumber,
+                        aiResponse: message,
+                        Body: message, // Include both formats for compatibility
                         From: TWILIO_PHONE_NUMBER,
                         To: phoneNumber,
                         timestamp: new Date().toISOString(),
-                        direction: 'outbound'
+                        direction: 'outbound',
+                        type: 'next_step'
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -408,12 +416,14 @@ fastify.post('/message-status', async (request, reply) => {
   try {
     // Forward the status to Make.com webhook
     await sendToWebhook({
+      userPhone: To, // Add userPhone field for consistency
       MessageSid,
       MessageStatus,
       To,
       From,
       timestamp: new Date().toISOString(),
-      direction: 'status_update'
+      direction: 'status_update',
+      type: 'message_status'
     });
   } catch (webhookError) {
     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -479,12 +489,14 @@ fastify.post('/sms', async (request, reply) => {
                 // Forward the SMS data to Make.com webhook
                 try {
                     await sendToWebhook({
+                        userPhone: From, // Add userPhone field for consistency
                         Body,
                         From,
                         MessageSid,
                         timestamp: new Date().toISOString(),
                         direction: 'inbound',
-                        step: state.step
+                        step: state.step,
+                        type: 'user_response'
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -513,12 +525,14 @@ fastify.post('/sms', async (request, reply) => {
                     // Still log the message to webhook for tracking
                     try {
                         await sendToWebhook({
+                            userPhone: From, // Add userPhone field for consistency
                             Body,
                             From,
                             MessageSid,
                             timestamp: new Date().toISOString(),
                             direction: 'inbound',
-                            ignored: true
+                            ignored: true,
+                            type: 'ignored_message'
                         });
                     } catch (webhookError) {
                         console.error('Webhook error (non-fatal):', webhookError.message);
