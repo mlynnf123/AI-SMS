@@ -241,6 +241,14 @@ async function handleUserResponse(phoneNumber, message) {
     
     const state = smsConversations.get(phoneNumber);
     
+    // Log the current state for debugging
+    console.log(`Current state for ${phoneNumber} before handling response:`, {
+        waitingForUserResponse: state.waitingForUserResponse,
+        step: state.step,
+        useAI: state.useAI,
+        lastMessageTime: state.lastMessageTime || 'not set'
+    });
+    
     try {
         // Store the user's message in the conversation history
         if (!state.history) {
@@ -286,6 +294,9 @@ async function handleUserResponse(phoneNumber, message) {
                     content: aiResponse
                 });
                 
+                // Update the last message time
+                state.lastMessageTime = Date.now();
+                
                 // Instead of sending SMS directly, only send to webhook for Make.com to handle
                 try {
                     // Use consistent payload structure with initial outreach
@@ -298,7 +309,8 @@ async function handleUserResponse(phoneNumber, message) {
                         timestamp: new Date().toISOString(),
                         direction: 'outbound',
                         aiGenerated: true,
-                        type: 'ai_response'
+                        type: 'ai_response',
+                        waitingForUserResponse: true // Explicitly indicate we're waiting for a response
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -378,6 +390,9 @@ async function processNextStep(phoneNumber, userName = '') {
                 // Update the state in the map
                 smsConversations.set(phoneNumber, state);
                 
+                // Update the last message time
+                state.lastMessageTime = Date.now();
+                
                 // Only send to webhook for Make.com to handle the SMS sending
                 try {
                     // Use consistent payload structure with initial outreach and AI responses
@@ -389,7 +404,8 @@ async function processNextStep(phoneNumber, userName = '') {
                         To: phoneNumber,
                         timestamp: new Date().toISOString(),
                         direction: 'outbound',
-                        type: 'next_step'
+                        type: 'next_step',
+                        waitingForUserResponse: state.waitingForUserResponse // Explicitly indicate if we're waiting for a response
                     });
                 } catch (webhookError) {
                     console.error('Webhook error (non-fatal):', webhookError.message);
@@ -460,15 +476,26 @@ fastify.post('/sms', async (request, reply) => {
     reply.send({ success: true, message: "SMS received, processing" });
 
     try {
-        console.log('Received SMS:', { Body, From, MessageSid });
+        // Get current state before processing
+        const existingState = smsConversations.get(From);
+        console.log(`Received SMS from ${From}:`, { 
+            Body, 
+            MessageSid,
+            currentState: existingState ? {
+                waitingForUserResponse: existingState.waitingForUserResponse,
+                step: existingState.step,
+                processing: existingState.processing
+            } : 'No existing state'
+        });
         
         // === IMPROVED STATE MANAGEMENT ===
         // Get current state or initialize
-        let state = smsConversations.get(From) || { 
+        let state = existingState || { 
             waitingForUserResponse: false, 
             step: 0, 
             useAI: true,
-            processing: false // New flag to prevent concurrent processing
+            processing: false, // New flag to prevent concurrent processing
+            lastMessageTime: Date.now() // Track when we last sent a message
         };
 
         // Check if already processing
