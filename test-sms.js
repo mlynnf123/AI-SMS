@@ -14,7 +14,9 @@ const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER || '+15127295813'; // Repla
 
 // Function to simulate an incoming SMS
 async function simulateIncomingSMS(from, body) {
-  console.log(`\nSimulating incoming SMS from ${from}: "${body}"`);
+  // Generate a random MessageSid for testing deduplication
+  const messageSid = `SM${Date.now()}${Math.floor(Math.random() * 1000000)}`;
+  console.log(`\nSimulating incoming SMS from ${from}: "${body}" (MessageSid: ${messageSid})`);
   
   try {
     const response = await fetch(`${SERVER_URL}/sms`, {
@@ -24,7 +26,8 @@ async function simulateIncomingSMS(from, body) {
       },
       body: JSON.stringify({
         From: from,
-        Body: body
+        Body: body,
+        MessageSid: messageSid
       })
     });
     

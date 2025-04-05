@@ -489,9 +489,49 @@ fastify.post('/check-leads', async (request, reply) => {
     }
 });
 
-// Route to handle incoming SMS
+// Constants for deduplication and rate limiting
+const MESSAGE_DEDUPE_WINDOW_MS = 60000; // 1 minute deduplication window
+const processedMessages = new Map(); // Track processed message IDs and timestamps
+const rateLimiter = new Map(); // phone -> last message timestamp
+
+// Periodically clean up old message IDs from the deduplication map
+setInterval(() => {
+    const now = Date.now();
+    const threshold = now - MESSAGE_DEDUPE_WINDOW_MS;
+    
+    for (const [messageId, timestamp] of processedMessages.entries()) {
+        if (timestamp < threshold) {
+            processedMessages.delete(messageId);
+        }
+    }
+    
+    console.log(`Deduplication cleanup: ${processedMessages.size} messages being tracked`);
+}, 30000); // Run every 30 seconds
+
+// Route to handle incoming SMS - MODIFIED WITH DEDUPLICATION AND RATE LIMITING
 fastify.post('/sms', async (request, reply) => {
-    const { Body: userMessage, From: userPhone } = request.body;
+    const { Body: userMessage, From: userPhone, MessageSid } = request.body;
+
+    // === RATE LIMITING ===
+    // Check for rate limiting
+    const lastMessageTime = rateLimiter.get(userPhone) || 0;
+    if (Date.now() - lastMessageTime < 1000) { // 1 second between messages
+        console.log(`Rate limiting ${userPhone} - too many messages`);
+        return reply.send({ success: true, message: "Message rate limited" });
+    }
+    rateLimiter.set(userPhone, Date.now());
+
+    // === DEDUPLICATION LOGIC ===
+    // Check for duplicate messages
+    if (MessageSid && processedMessages.has(MessageSid)) {
+        console.log(`Duplicate message ${MessageSid} detected, ignoring`);
+        return reply.send({ success: true, message: "Duplicate message ignored" });
+    }
+
+    // Add message to processed set with timestamp
+    if (MessageSid) {
+        processedMessages.set(MessageSid, Date.now());
+    }
 
     try {
         // Get or create conversation in Supabase
@@ -507,7 +547,8 @@ fastify.post('/sms', async (request, reply) => {
             message: {
                 sender: 'user',
                 content: userMessage,
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                MessageSid
             }
         });
 
