@@ -8,7 +8,7 @@ Your system is sending the same SMS data to **two different Make.com webhooks**:
 
 1. In your index.js file, there's a default webhook URL:
    ```javascript
-   const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+   const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
    ```
 
 2. In your .env file, there's a different webhook URL:
@@ -40,7 +40,7 @@ This means that when your server receives an SMS, it forwards it to the webhook 
 
    ```javascript
    // Change this:
-   const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/6ip909xvgbf9bgu76ih2luo8iygn85jr";
+   const WEBHOOK_URL = process.env.WEBHOOK_URL || "https://hook.us1.make.com/kepedzwftagnlr8d3cdc2ic88h3774sb";
    
    // To this:
    const WEBHOOK_URL = process.env.WEBHOOK_URL;
